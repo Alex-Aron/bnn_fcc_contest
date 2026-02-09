@@ -2,29 +2,37 @@ module neuron_processor #(
     parameter int MAX_NEURON_INPUTS = 8,  // total inputs per neuron
     parameter int PW = 8,  // weights inputs that can be processed in one pass
     localparam int THRESHOLD_WIDTH = $clog2(MAX_NEURON_INPUTS + 1)
-    //localparam int NEURON_ITERATIONS = int'($ceil(MAX_NEURON_INPUTS / PW))
 ) (
     input  logic                       clk,
     input  logic                       rst,
     input  logic [             PW-1:0] weights,
     input  logic [             PW-1:0] inputs,
     input  logic [THRESHOLD_WIDTH-1:0] threshold,
-    input  logic                       valid_in, // assume input always valid for now
+    input  logic                       valid_in,   // assume input always valid for now
     input  logic                       last,
     output logic                       valid_out,
     output logic                       y,
     output logic [THRESHOLD_WIDTH-1:0] popcount
 );
-    logic [THRESHOLD_WIDTH-1:0] popcount_r, pop_out, next_pop;
+    localparam int REMAINDER = MAX_NEURON_INPUTS % PW;
+    localparam int PADDING = (REMAINDER == 0) ? 0 : PW - REMAINDER;
 
-    //logic [31:0] curr_iteration = '0; // not needed with last signal
-    // idea was count iterations for a signle neuron in controller
-    
     logic v_out;
+    logic [THRESHOLD_WIDTH-1:0] popcount_r, pop_out, next_pop;
+    logic [PADDING+PW - 1:0] weights_padded, inputs_padded;
+
+    /*
+    logic [31:0] curr_iteration = '0; // not needed with last signal
+    localparam int NEURON_ITERATIONS = int'($ceil(MAX_NEURON_INPUTS / PW))
+    idea was count iterations for a signle neuron in controller, but an external controller will 
+    probably do this
+    */
 
     assign y = (pop_out >= threshold) ? 1 : 0;
     assign popcount = pop_out;
     assign valid_out = v_out;
+    assign weights_padded = {{PADDING{1'b0}}, weights};
+    assign inputs_padded = {{PADDING{1'b1}}, inputs};
 
     always_ff @(posedge clk or posedge rst) begin
         if (rst) begin
@@ -47,7 +55,7 @@ module neuron_processor #(
 
     always_comb begin
         next_pop = popcount_r;
-        if (valid_in) next_pop = popcount_r + $countones(weights ~^ inputs);
+        if (valid_in) next_pop = popcount_r + $countones(weights_padded ~^ inputs_padded);
     end
 
 endmodule : neuron_processor
