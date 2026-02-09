@@ -1,0 +1,6 @@
+work/*
+*.mti
+*.mpf
+*.vcd
+transcript
+vsim.wlf
