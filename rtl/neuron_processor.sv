@@ -17,12 +17,12 @@ module neuron_processor #(
     logic v_out;
     logic [THRESHOLD_WIDTH-1:0] popcount_r, pop_out, next_pop;
 
-    assign y = (pop_out >= threshold) ? 1 : 0; // maybe register this? just to have a y_r since i have a v_out reg
-    assign popcount = pop_out;
+    assign popcount  = pop_out;
     assign valid_out = v_out;
 
     always_ff @(posedge clk or posedge rst) begin
         if (rst) begin
+            y <= 1'b0;
             popcount_r <= '0;
             v_out <= '0;
             pop_out <= '0;
@@ -30,11 +30,11 @@ module neuron_processor #(
             if (last) begin
                 popcount_r <= '0;
                 pop_out <= next_pop;
+                y <= (next_pop >= threshold) ? 1 : 0;
                 v_out <= '1;
             end else begin
                 popcount_r <= next_pop;
                 v_out <= '0;
-                // pop_out <= '0;
             end
         end else begin
             v_out <= '0;
