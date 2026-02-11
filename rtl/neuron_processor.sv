@@ -14,32 +14,19 @@ module neuron_processor #(
     output logic                       y,
     output logic [THRESHOLD_WIDTH-1:0] popcount
 );
-    localparam int REMAINDER = MAX_NEURON_INPUTS % PW;
-    localparam int PADDING = (REMAINDER == 0) ? 0 : PW - REMAINDER;
-
     logic v_out;
     logic [THRESHOLD_WIDTH-1:0] popcount_r, pop_out, next_pop;
-    logic [PADDING+PW - 1:0] weights_padded, inputs_padded;
 
-    /*
-    logic [31:0] curr_iteration = '0; // not needed with last signal
-    localparam int NEURON_ITERATIONS = int'($ceil(MAX_NEURON_INPUTS / PW))
-    idea was count iterations for a signle neuron in controller, but an external controller will 
-    probably do this
-    */
-
-    assign y = (pop_out >= threshold) ? 1 : 0;
+    assign y = (pop_out >= threshold) ? 1 : 0; // maybe register this? just to have a y_r since i have a v_out reg
     assign popcount = pop_out;
     assign valid_out = v_out;
-    assign weights_padded = {{PADDING{1'b0}}, weights};
-    assign inputs_padded = {{PADDING{1'b1}}, inputs};
 
     always_ff @(posedge clk or posedge rst) begin
         if (rst) begin
             popcount_r <= '0;
             v_out <= '0;
             pop_out <= '0;
-        end else begin
+        end else if (valid_in) begin
             if (last) begin
                 popcount_r <= '0;
                 pop_out <= next_pop;
@@ -47,15 +34,16 @@ module neuron_processor #(
             end else begin
                 popcount_r <= next_pop;
                 v_out <= '0;
-                pop_out <= '0;
+                // pop_out <= '0;
             end
+        end else begin
+            v_out <= '0;
         end
-
     end
 
     always_comb begin
         next_pop = popcount_r;
-        if (valid_in) next_pop = popcount_r + $countones(weights_padded ~^ inputs_padded);
+        if (valid_in) next_pop = popcount_r + $countones(weights ~^ inputs);
     end
 
 endmodule : neuron_processor
