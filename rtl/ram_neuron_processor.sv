@@ -1,3 +1,14 @@
+// this design assumes that what we want is stored sequentially in ram
+// first threshold at address 0, then 1, then 2
+
+/*
+* TODO
+* 1. im pretty sure the ram is 1 cycle too slow, it takes one cycle to update
+* the address and another to read from the address so the address needs to be
+* mealy vibes
+*
+* */
+
 module ram_neuron_processor #(
     /* parameters for neuron neuron_processor */
     parameter int MAX_NEURON_INPUTS = 8,  // total inputs per neuron
@@ -9,7 +20,7 @@ module ram_neuron_processor #(
     // i feel like MAX_NEURON_INPUTS weights would be stored in here but i have no idea TODO
     localparam int ADDR_WIDTH = $clog2(MAX_NEURON_INPUTS + 1),
     parameter bit REG_RD_DATA = 1'b1,
-    parameter string STYLE = ""
+    parameter string STYLE = ""  // idk what this does
 ) (
     input logic clk,
     input logic rst,
@@ -24,21 +35,65 @@ module ram_neuron_processor #(
 
     // Threshhold ram Port A (only expose port A, port B used internally)
     // tram = threshhold ram
-    input  logic                  tram_en_a,
-    input  logic                  tram_wr_en_a,
-    input  logic [ADDR_WIDTH-1:0] tram_addr_a,
-    input  logic [DATA_WIDTH-1:0] tram_wr_data_a,
-    output logic [DATA_WIDTH-1:0] tram_rd_data_a,
+    input  logic                       tram_en_a,
+    input  logic                       tram_wr_en_a,
+    input  logic [     ADDR_WIDTH-1:0] tram_addr_a,
+    input  logic [THRESHOLD_WIDTH-1:0] tram_wr_data_a,
+    output logic [THRESHOLD_WIDTH-1:0] tram_rd_data_a,
 
     // TODO probably add a buffer or sm
     input logic [PW-1:0] inputs,
 
-    input  logic                       valid_in,   // assume input always valid for now
+    input  logic                       valid_in,
     input  logic                       last,
     output logic                       valid_out,
     output logic                       y,
     output logic [THRESHOLD_WIDTH-1:0] popcount
 );
+  logic [ADDR_WIDTH-1:0] tram_addr_r;
+  logic [ADDR_WIDTH-1:0] wram_addr_r;
+
+  logic [THRESHOLD_WIDTH-1:0] tram_rd_data;
+  logic [DATA_WIDTH-1:0] wram_rd_data;
+
+  logic last_was_set_r; // for resetting threshold_ram, we reset when valid_out = 1 AFTER last was set
+
+  /* counters and control */
+  always_ff @(posedge clk or posedge rst) begin
+    if (rst) begin
+      tram_addr_r <= '0;
+      wram_addr_r <= '0;
+      last_was_set_r <= '0;
+    end else begin
+      // valid_out = 1 implies we used the current threshold, so move to next
+      if (valid_out) begin
+        tram_addr_r <= tram_addr_r + 1'b1;
+      end
+
+      // valid_in = 1 implies we used the current weights, so move to next
+      if (valid_in) begin
+        wram_addr_r <= wram_addr_r + 1'b1;
+      end
+
+      if (last) begin
+        wram_addr_r <= '0;
+      end
+
+      // if last = 1, we need to reset adress registers (or schedule their
+      // reset)
+      if (last & valid_in) begin
+        last_was_set_r <= 1'b1;
+      end
+
+      // this is latency agnostic :P
+      if (last_was_set_r & valid_out) begin
+        last_was_set_r <= 1'b0;
+        tram_addr_r <= '0;
+      end
+    end
+  end
+
+  /* STRUCTURAL STUFF */
 
   // instantiate neuron_processor
   neuron_processor #(
@@ -47,9 +102,9 @@ module ram_neuron_processor #(
   ) single_neuron (
       .clk(clk),
       .rst(rst),
-      .weights(),  // somehow connect to ram
+      .weights(wram_rd_data),  // somehow connect to ram
       .inputs(inputs),
-      .threshold(),  // somehow connect to ram
+      .threshold(tram_rd_data),  // somehow connect to ram
       .valid_in(valid_in),
       .last(last),
       .valid_out(valid_out),
@@ -65,7 +120,7 @@ module ram_neuron_processor #(
   ) wram (
       .clk(clk),
 
-      // Port A
+      // Port A - to be used by configuration manager
       .en_a(wram_en_a),
       .wr_en_a(wram_wr_en_a),
       .addr_a(wram_addr_a),
@@ -73,11 +128,11 @@ module ram_neuron_processor #(
       .rd_data_a(wram_rd_data_a),
 
       // Port B TODO connect this to the neuron_processor somehow
-      .en_b(),
-      .wr_en_b(),
-      .addr_b(),
-      .wr_data_b(),
-      .rd_data_b()
+      .en_b(1'b1),  // always on?? TODO
+      .wr_en_b(1'b0),
+      .addr_b(wram_addr_r),
+      .wr_data_b(),  // not used
+      .rd_data_b(wram_rd_data)
   );
 
   ram_tdp #(
@@ -88,7 +143,7 @@ module ram_neuron_processor #(
   ) tram (
       .clk(clk),
 
-      // Port A
+      // Port A - to be used by configuration manager
       .en_a(tram_en_a),
       .wr_en_a(tram_wr_en_a),
       .addr_a(tram_addr_a),
@@ -96,11 +151,11 @@ module ram_neuron_processor #(
       .rd_data_a(tram_rd_data_a),
 
       // Port B TODO connect this to the neuron_processor somehow
-      .en_b(),
-      .wr_en_b(),
-      .addr_b(),
-      .wr_data_b(),
-      .rd_data_b()
+      .en_b(1'b1),  // always on?? TODO
+      .wr_en_b(1'b0),
+      .addr_b(tram_addr_r),
+      .wr_data_b(),  // not used
+      .rd_data_b(tram_rd_data)
   );
 
 endmodule : neuron_processor
