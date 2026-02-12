@@ -63,7 +63,23 @@ module neuron_processor_tb;
     // TODO load the rams, provided the inputs, verify the inputs, put it all
     // in a loop :(
 
+    // first generate 2^{ADDR_WIDTH} weights, each of width PW
+
     $display("Tests completed.");
     disable generate_clock;
   end
+
+  // 1<<ADDR_WIDTH is 2^{ADDR_WIDTH}
+  function automatic logic [(1<<ADDR_WIDTH)-1:0][PW-1:0] random_weights();
+    logic weights[(1<<ADDR_WIDTH)-1:0][PW-1:0];
+
+    // for each list, populate the logic_vector
+    for (int i = 0; i < ADDR_WIDTH; i++) begin
+      weights[i] = $random(i) % $clog2(PW);  // TODO should this be clog2 +1 idk
+                                             // remove i for truly random test,
+                                             // leave i for repeatable
+                                             // "random" weights
+    end
+  endfunction
+
 endmodule
