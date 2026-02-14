@@ -69,24 +69,16 @@ module ram_neuron_processor #(
     next_last_was_set = last_was_set_r;
 
     // valid_out = 1 implies we used the current threshold, so move to next
-    if (valid_out) begin
-      next_tram_addr = tram_addr_r + 1'b1;
-    end
+    if (valid_out) next_tram_addr = tram_addr_r + 1'b1;
 
     // valid_in = 1 implies we used the current weights, so move to next
-    if (valid_in) begin
-      next_wram_addr = wram_addr_r + 1'b1;
-    end
+    if (valid_in) next_wram_addr = wram_addr_r + 1'b1;
 
-    if (last) begin
-      next_wram_addr = '0;
-    end
+    if (last) next_wram_addr = '0;
 
     // if last = 1, we need to reset adress registers (in reality we have to schedule that
     // reset)
-    if (last & valid_in) begin
-      next_last_was_set = 1'b1;
-    end
+    if (last & valid_in) next_last_was_set = 1'b1;
 
     if (last_was_set_r & valid_out) begin
       next_last_was_set = 1'b0;
@@ -162,5 +154,5 @@ module ram_neuron_processor #(
       .rd_data_b(tram_rd_data)
   );
 
-endmodule : neuron_processor
+endmodule : ram_neuron_processor
 
