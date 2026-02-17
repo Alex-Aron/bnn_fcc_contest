@@ -50,36 +50,83 @@ module neuron_processor_tb;
     forever #5 clk <= ~clk;
   end
 
+  // generate random weights
+  logic rams_ready;
+  logic rand_weights[(1<<ADDR_WIDTH)-1:0][PW-1:0];
+  logic rand_threshholds[(1<<ADDR_WIDTH)-1:0][THRESHOLD_WIDTH-1:0];
+  logic rand_inputs[(1<<ADDR_WIDTH)-1:0][PW-1:0];
+  initial begin : generate_input
+    rams_ready <= 1'b0;
+
+    // populate `weights` and `threshholds` vectors with random weights and threshholds
+    // we need them as intermediates since they will also be used to compute
+    // expected outputs
+    for (int i = 0; i < (1 << ADDR_WIDTH); i++) begin
+      rand_weights[i] <= $urandom;
+      rand_threshholds[i] <= $urandom;
+      rand_inputs <= $urandom;
+    end
+
+    // actually write ts to rams :P
+    wram_en_a <= 1'b1;
+    wram_addr_a <= '0;
+    wram_wr_en_a <= 1'b0;
+
+    tram_en_a <= 1'b1;
+    tram_addr_a <= '0;
+    tram_wr_en_a <= 1'b0;
+
+    @(posedge clk);
+
+    for (int i = 0; i < (1 << ADDR_WIDTH); i++) begin
+      wram_en_a <= 1'b1;
+      wram_addr_a <= i;
+      wram_wr_en_a <= 1'b1;
+      wram_wr_data_a <= rand_weights[i];
+
+      tram_en_a <= 1'b1;
+      tram_addr_a <= i;
+      tram_wr_en_a <= 1'b1;
+      tram_wr_data_a <= rand_weights[i];
+      @(posedge clk);
+    end
+
+    rams_ready <= 1'b1;
+  end
+
+  // signals for storing actual outputs
+  logic actual_y;
+  logic [THRESHOLD_WIDTH-1:0] actual_popcount;
   initial begin : apply_tests
     $timeformat(-9, 0, " ns");
 
     // rst and drive valid_in false
     rst <= 1'b1;
     valid_in <= 1'b0;
-    #5
+    @(posedge clk iff rams_ready == 1'b1);  // wait until rams are ready to start
     // un-reset
     rst <= 1'b0;
+    @(negedge clk);  // in class dr stitt said he does this 
+                     // i dont remember why tho
 
-    // TODO load the rams, provided the inputs, verify the inputs, put it all
-    // in a loop :(
+    // assert all the inputs except for the very last one, which has special
+    // last signal 
+    for (int i = 0; i < (1 << ADDR_WIDTH) - 1; i++) begin
+      inputs   <= rand_inputs[i];
+      valid_in <= '1;
+      @(posedge clk);
+    end
 
-    // first generate 2^{ADDR_WIDTH} weights, each of width PW
+    // last one with last signal
+    inputs <= rand_inputs[(1<<ADDR_WIDTH)-1];
+    last <= '1;
+    valid_in <= '1;
+
+    @(posedge clk iff valid_out == 1'b1);
+    actual_y <= y;
+    actual_popcount <= popcount;
 
     $display("Tests completed.");
     disable generate_clock;
   end
-
-  // 1<<ADDR_WIDTH is 2^{ADDR_WIDTH}
-  function automatic logic [(1<<ADDR_WIDTH)-1:0][PW-1:0] random_weights();
-    logic weights[(1<<ADDR_WIDTH)-1:0][PW-1:0];
-
-    // for each list, populate the logic_vector
-    for (int i = 0; i < ADDR_WIDTH; i++) begin
-      weights[i] = $random(i) % $clog2(PW);  // TODO should this be clog2 +1 idk
-                                             // remove i for truly random test,
-                                             // leave i for repeatable
-                                             // "random" weights
-    end
-  endfunction
-
 endmodule
