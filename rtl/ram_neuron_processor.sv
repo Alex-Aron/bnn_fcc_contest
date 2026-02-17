@@ -13,7 +13,10 @@ module ram_neuron_processor #(
     /* parameters for ram*/
     localparam int DATA_WIDTH = PW,
     // i feel like MAX_NEURON_INPUTS weights would be stored in here but i have no idea TODO
-    localparam int ADDR_WIDTH = $clog2(MAX_NEURON_INPUTS + 1),
+    localparam int W_ADDR_WIDTH = $clog2(MAX_NEURON_INPUTS + 1),
+    localparam int T_ADDR_WIDTH = $clog2(
+        MAX_NEURON_INPUTS / PW + 1
+    ),  // this assumes MAX_NEURON_INPUTS % PW = 0
     parameter bit REG_RD_DATA = 1'b1,
     parameter string STYLE = ""  // idk what this does
 ) (
@@ -22,17 +25,17 @@ module ram_neuron_processor #(
 
     // Weight ram Port A (only expose port A, port B used internally)
     // wram = weight ram
-    input  logic                  wram_en_a,       // read as wram's en on port A, for example
-    input  logic                  wram_wr_en_a,
-    input  logic [ADDR_WIDTH-1:0] wram_addr_a,
-    input  logic [DATA_WIDTH-1:0] wram_wr_data_a,
-    output logic [DATA_WIDTH-1:0] wram_rd_data_a,
+    input  logic                    wram_en_a,       // read as wram's en on port A, for example
+    input  logic                    wram_wr_en_a,
+    input  logic [W_ADDR_WIDTH-1:0] wram_addr_a,
+    input  logic [  DATA_WIDTH-1:0] wram_wr_data_a,
+    output logic [  DATA_WIDTH-1:0] wram_rd_data_a,
 
     // Threshhold ram Port A (only expose port A, port B used internally)
     // tram = threshhold ram
     input  logic                       tram_en_a,
     input  logic                       tram_wr_en_a,
-    input  logic [     ADDR_WIDTH-1:0] tram_addr_a,
+    input  logic [   T_ADDR_WIDTH-1:0] tram_addr_a,
     input  logic [THRESHOLD_WIDTH-1:0] tram_wr_data_a,
     output logic [THRESHOLD_WIDTH-1:0] tram_rd_data_a,
 
@@ -45,8 +48,8 @@ module ram_neuron_processor #(
     output logic                       y,
     output logic [THRESHOLD_WIDTH-1:0] popcount
 );
-  logic [ADDR_WIDTH-1:0] tram_addr_r, next_tram_addr;
-  logic [ADDR_WIDTH-1:0] wram_addr_r, next_wram_addr;
+  logic [T_ADDR_WIDTH-1:0] tram_addr_r, next_tram_addr;
+  logic [W_ADDR_WIDTH-1:0] wram_addr_r, next_wram_addr;
   logic last_was_set_r; // for resetting threshold_ram, we reset when valid_out = 1 AFTER last was set
   logic next_last_was_set;
 
@@ -110,7 +113,7 @@ module ram_neuron_processor #(
 
   ram_tdp #(
       .DATA_WIDTH(DATA_WIDTH),
-      .ADDR_WIDTH(ADDR_WIDTH),
+      .ADDR_WIDTH(W_ADDR_WIDTH),
       .REG_RD_DATA(REG_RD_DATA),
       .STYLE(STYLE)
   ) wram (
@@ -133,7 +136,7 @@ module ram_neuron_processor #(
 
   ram_tdp #(
       .DATA_WIDTH(THRESHOLD_WIDTH),  // lol it's not data width sorry-bout-that
-      .ADDR_WIDTH(ADDR_WIDTH),
+      .ADDR_WIDTH(T_ADDR_WIDTH),
       .REG_RD_DATA(REG_RD_DATA),
       .STYLE(STYLE)
   ) tram (
