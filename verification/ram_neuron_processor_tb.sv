@@ -1,6 +1,6 @@
 `timescale 1 ns / 100 ps
 
-module neuron_processor_tb;
+module ram_neuron_processor_tb;
 
   // Params
   parameter int MAX_NEURON_INPUTS = 8;
@@ -9,7 +9,6 @@ module neuron_processor_tb;
   parameter string STYLE = "";
   // we also need some local params from inside the DUT, copied here
   localparam int THRESHOLD_WIDTH = $clog2(MAX_NEURON_INPUTS + 1);
-  localparam int DATA_WIDTH = PW;
   localparam int ADDR_WIDTH = $clog2(MAX_NEURON_INPUTS + 1);
 
   // Signals
@@ -20,8 +19,8 @@ module neuron_processor_tb;
   logic                       wram_en_a;
   logic                       wram_wr_en_a;
   logic [     ADDR_WIDTH-1:0] wram_addr_a;
-  logic [     DATA_WIDTH-1:0] wram_wr_data_a;
-  logic [     DATA_WIDTH-1:0] wram_rd_data_a;
+  logic [             PW-1:0] wram_wr_data_a;
+  logic [             PW-1:0] wram_rd_data_a;
   logic                       tram_en_a;
   logic                       tram_wr_en_a;
   logic [     ADDR_WIDTH-1:0] tram_addr_a;
@@ -46,15 +45,16 @@ module neuron_processor_tb;
   );
 
   // start the clock
-  initial begin : the_rabbits_clk
-    forever #5 clk <= ~clk;
+  initial begin : generate_clock
+    clk <= '0;
+    #5 forever #5 clk <= ~clk;
   end
 
   // generate random weights
   logic rams_ready;
-  logic rand_weights[(1<<ADDR_WIDTH)-1:0][PW-1:0];
-  logic rand_threshholds[(1<<ADDR_WIDTH)-1:0][THRESHOLD_WIDTH-1:0];
-  logic rand_inputs[(1<<ADDR_WIDTH)-1:0][PW-1:0];
+  logic [PW-1:0] rand_weights[(1<<ADDR_WIDTH)-1:0];
+  logic [THRESHOLD_WIDTH-1:0] rand_threshholds[(1<<ADDR_WIDTH)-1:0];
+  logic [PW-1:0] rand_inputs[(1<<ADDR_WIDTH)-1:0];
   initial begin : generate_input
     rams_ready <= 1'b0;
 
@@ -64,7 +64,7 @@ module neuron_processor_tb;
     for (int i = 0; i < (1 << ADDR_WIDTH); i++) begin
       rand_weights[i] <= $urandom;
       rand_threshholds[i] <= $urandom;
-      rand_inputs <= $urandom;
+      rand_inputs[i] <= $urandom;
     end
 
     // actually write ts to rams :P
