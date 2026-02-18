@@ -5,12 +5,13 @@ module ram_neuron_processor_tb;
   // Params
   parameter int MAX_NEURON_INPUTS = 4;
   parameter int PW = 2;
+  parameter int NEURONS_MAPPED_TO_ME = 2;
   parameter bit REG_RD_DATA = 1'b1;
   parameter string STYLE = "";
   // we also need some local params from inside the DUT, copied here
   localparam int THRESHOLD_WIDTH = $clog2(MAX_NEURON_INPUTS + 1);
-  localparam int W_ADDR_WIDTH = $clog2(MAX_NEURON_INPUTS / PW);
-  localparam int T_ADDR_WIDTH = 1;  // TODO
+  localparam int W_ADDR_WIDTH = $clog2(NEURONS_MAPPED_TO_ME * (MAX_NEURON_INPUTS / PW));
+  localparam int T_ADDR_WIDTH = $clog2(NEURONS_MAPPED_TO_ME);
 
   // Signals
   logic                       clk;
@@ -38,6 +39,7 @@ module ram_neuron_processor_tb;
   // DUT Instantiation
   ram_neuron_processor #(
       .MAX_NEURON_INPUTS(MAX_NEURON_INPUTS),
+      .NEURONS_MAPPED_TO_ME(NEURONS_MAPPED_TO_ME),
       .PW(PW),
       .REG_RD_DATA(REG_RD_DATA),
       .STYLE(STYLE)
@@ -54,7 +56,7 @@ module ram_neuron_processor_tb;
   // generate random weights
   logic rams_ready;
   logic [PW-1:0] rand_weights[(1<<W_ADDR_WIDTH)-1:0];
-  logic [THRESHOLD_WIDTH-1:0] rand_threshholds[T_ADDR_WIDTH-1:0];  // TODO kill me
+  logic [THRESHOLD_WIDTH-1:0] rand_threshholds[(1<<T_ADDR_WIDTH)-1:0];
   logic [PW-1:0] rand_inputs[(1<<W_ADDR_WIDTH)-1:0];
   int counter;
   initial begin : generate_input

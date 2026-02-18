@@ -8,15 +8,14 @@ module ram_neuron_processor #(
     /* parameters for neuron neuron_processor */
     parameter int MAX_NEURON_INPUTS = 8,  // total inputs per neuron
     parameter int PW = 8,  // weights inputs that can be processed in one pass
+    parameter int NEURONS_MAPPED_TO_ME = 1,
     localparam int THRESHOLD_WIDTH = $clog2(MAX_NEURON_INPUTS + 1),
 
     /* parameters for ram*/
     localparam int DATA_WIDTH = PW,
     // i feel like MAX_NEURON_INPUTS weights would be stored in here but i have no idea TODO
-    localparam int W_ADDR_WIDTH = $clog2(MAX_NEURON_INPUTS),
-    localparam int T_ADDR_WIDTH = $clog2(
-        MAX_NEURON_INPUTS / PW
-    ),  // this assumes MAX_NEURON_INPUTS % PW = 0
+    localparam int W_ADDR_WIDTH = $clog2(NEURONS_MAPPED_TO_ME * (MAX_NEURON_INPUTS / PW)),
+    localparam int T_ADDR_WIDTH = $clog2(NEURONS_MAPPED_TO_ME),
     parameter bit REG_RD_DATA = 1'b1,
     parameter string STYLE = ""  // idk what this does
 ) (
