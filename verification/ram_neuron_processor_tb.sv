@@ -3,16 +3,14 @@
 module ram_neuron_processor_tb;
 
   // Params
-  parameter int MAX_NEURON_INPUTS = 8;
-  parameter int PW = 8;
+  parameter int MAX_NEURON_INPUTS = 4;
+  parameter int PW = 2;
   parameter bit REG_RD_DATA = 1'b1;
   parameter string STYLE = "";
   // we also need some local params from inside the DUT, copied here
   localparam int THRESHOLD_WIDTH = $clog2(MAX_NEURON_INPUTS + 1);
-  localparam int W_ADDR_WIDTH = $clog2(MAX_NEURON_INPUTS + 1);
-  localparam int T_ADDR_WIDTH = $clog2(
-      MAX_NEURON_INPUTS / PW + 1
-  );  // this assumes MAX_NEURON_INPUTS % PW = 0
+  localparam int W_ADDR_WIDTH = $clog2(MAX_NEURON_INPUTS / PW);
+  localparam int T_ADDR_WIDTH = 1;  // TODO
 
   // Signals
   logic                       clk;
@@ -56,8 +54,9 @@ module ram_neuron_processor_tb;
   // generate random weights
   logic rams_ready;
   logic [PW-1:0] rand_weights[(1<<W_ADDR_WIDTH)-1:0];
-  logic [THRESHOLD_WIDTH-1:0] rand_threshholds[(1<<T_ADDR_WIDTH)-1:0];
+  logic [THRESHOLD_WIDTH-1:0] rand_threshholds[T_ADDR_WIDTH-1:0];  // TODO kill me
   logic [PW-1:0] rand_inputs[(1<<W_ADDR_WIDTH)-1:0];
+  int counter;
   initial begin : generate_input
     rams_ready <= 1'b0;
 
@@ -83,7 +82,7 @@ module ram_neuron_processor_tb;
 
     @(posedge clk);
 
-    for (int i = 0; i < (1 << W_ADDR_WIDTH); i++) begin
+    for (int i = 0; i < (1 << W_ADDR_WIDTH) - 1; i++) begin
       wram_en_a <= 1'b1;
       wram_addr_a <= i;
       wram_wr_en_a <= 1'b1;
@@ -93,7 +92,7 @@ module ram_neuron_processor_tb;
     end
     wram_en_a <= 1'b0;
 
-    for (int i = 0; i < (1 << T_ADDR_WIDTH); i++) begin
+    for (int i = 0; i < (1 << T_ADDR_WIDTH) - 1; i++) begin
       tram_en_a <= 1'b1;
       tram_addr_a <= i;
       tram_wr_en_a <= 1'b1;
@@ -107,36 +106,34 @@ module ram_neuron_processor_tb;
   end
 
   // signals for storing actual outputs
-  logic actual_y;
-  logic [THRESHOLD_WIDTH-1:0] actual_popcount;
   initial begin : apply_tests
     $timeformat(-9, 0, " ns");
 
     // rst and drive valid_in false
     rst <= 1'b1;
     valid_in <= 1'b0;
-    @(posedge clk iff rams_ready == 1'b1);  // wait until rams are ready to start
+    last <= 1'b0;
+    @(negedge clk iff rams_ready == 1'b1);  // wait until rams are ready to start
     // un-reset
     rst <= 1'b0;
-    @(negedge clk);  // in class dr stitt said he does this 
+    @(posedge clk);  // in class dr stitt said he does this 
                      // i dont remember why tho
 
-    // assert all the inputs except for the very last one, which has special
-    // last signal 
-    for (int i = 0; i < (1 << W_ADDR_WIDTH) - 1; i++) begin
-      inputs   <= rand_inputs[i];
+
+    // uses `int counter;` defined above this initial block
+    // input all the inputs :P
+    // assert last as needed
+    counter = 0;
+    for (int i = 0; i < (1 << W_ADDR_WIDTH); i++) begin
+      counter++;
+      inputs <= rand_inputs[i];
       valid_in <= '1;
+      last <= counter == (MAX_NEURON_INPUTS / PW) ? 1'b1 : 1'b0;
+      counter <= counter == (MAX_NEURON_INPUTS / PW) ? 0 : counter;
       @(posedge clk);
     end
 
-    // last one with last signal
-    inputs <= rand_inputs[(1<<W_ADDR_WIDTH)-1];
-    last <= '1;
-    valid_in <= '1;
-
-    @(posedge clk iff valid_out == 1'b1);
-    actual_y <= y;
-    actual_popcount <= popcount;
+    @(negedge clk iff valid_out == 1'b1);
 
     $display("Tests completed.");
     disable generate_clock;

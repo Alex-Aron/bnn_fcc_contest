@@ -13,9 +13,9 @@ module ram_neuron_processor #(
     /* parameters for ram*/
     localparam int DATA_WIDTH = PW,
     // i feel like MAX_NEURON_INPUTS weights would be stored in here but i have no idea TODO
-    localparam int W_ADDR_WIDTH = $clog2(MAX_NEURON_INPUTS + 1),
+    localparam int W_ADDR_WIDTH = $clog2(MAX_NEURON_INPUTS),
     localparam int T_ADDR_WIDTH = $clog2(
-        MAX_NEURON_INPUTS / PW + 1
+        MAX_NEURON_INPUTS / PW
     ),  // this assumes MAX_NEURON_INPUTS % PW = 0
     parameter bit REG_RD_DATA = 1'b1,
     parameter string STYLE = ""  // idk what this does
