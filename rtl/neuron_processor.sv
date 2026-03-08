@@ -2,7 +2,6 @@ module neuron_processor #(
     parameter int MAX_NEURON_INPUTS = 8,  // total inputs per neuron
     parameter int PW = 8,  // weights inputs that can be processed in one pass
     localparam int THRESHOLD_WIDTH = $clog2(MAX_NEURON_INPUTS + 1)
-    //localparam int NEURON_ITERATIONS = int'($ceil(MAX_NEURON_INPUTS / PW))
 ) (
     input  logic                       clk,
     input  logic                       rst,
@@ -16,10 +15,6 @@ module neuron_processor #(
     output logic [THRESHOLD_WIDTH-1:0] popcount
 );
     logic [THRESHOLD_WIDTH-1:0] popcount_r, pop_out, next_pop;
-
-    //logic [31:0] curr_iteration = '0; // not needed with last signal
-    // idea was count iterations for a signle neuron in controller
-
     logic v_out;
 
     assign y = (pop_out >= threshold) ? 1 : 0;
