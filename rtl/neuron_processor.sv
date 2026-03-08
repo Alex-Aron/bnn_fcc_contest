@@ -9,7 +9,7 @@ module neuron_processor #(
     input  logic [             PW-1:0] weights,
     input  logic [             PW-1:0] inputs,
     input  logic [THRESHOLD_WIDTH-1:0] threshold,
-    input  logic                       valid_in, // assume input always valid for now
+    input  logic                       valid_in,   // assume input always valid for now
     input  logic                       last,
     output logic                       valid_out,
     output logic                       y,
@@ -19,7 +19,7 @@ module neuron_processor #(
 
     //logic [31:0] curr_iteration = '0; // not needed with last signal
     // idea was count iterations for a signle neuron in controller
-    
+
     logic v_out;
 
     assign y = (pop_out >= threshold) ? 1 : 0;
@@ -47,7 +47,7 @@ module neuron_processor #(
 
     always_comb begin
         next_pop = popcount_r;
-        if (valid_in) next_pop = popcount_r + $countones(weights ~^ inputs);
+        if (valid_in) next_pop = popcount_r + THRESHOLD_WIDTH'(unsigned'($countones(weights ~^ inputs)));
     end
 
 endmodule : neuron_processor
