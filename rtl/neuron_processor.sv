@@ -27,7 +27,7 @@ module neuron_processor #(
             v_out <= '0;
             pop_out <= '0;
         end else begin
-            if (last) begin
+            if (last && valid_in) begin
                 popcount_r <= '0;
                 pop_out <= next_pop;
                 v_out <= '1;
