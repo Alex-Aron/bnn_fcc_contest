@@ -11,6 +11,7 @@ module bnn #(
     input  logic                            rst,
     input  logic                            en,
     input  logic                            ready,
+    // these 4 could be outputs idek man
     input  logic [     PARALLEL_INPUTS-1:0] weight_wr_data,
     input  logic [              LAYERS-1:0] weight_wr_en,
     input  logic [THRESHOLD_DATA_WIDTH-1:0] threshold_wr_data,
