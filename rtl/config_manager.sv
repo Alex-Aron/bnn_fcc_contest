@@ -51,21 +51,22 @@ Just ideas, I am going to work on this I just want to push after making the two 
         HEADER_PARSE2,
         PROCESS_WEIGHTS,
         PROCESS_THRESHOLDS,  // enter a diff state based on the message type
+        // thought of adding an error 
         FINISH_LAYER  // some state to just process anything remaining in layer (or reset stuff) 
     } state_t;
 
-    state_t curr_state, next_state;
+    state_t state, next_state;
 
     always_ff @(posedge clk or posedge rst)
-        if (rst) curr_state <= HEADER_PARSE1;
-        else curr_state <= next_state;
+        if (rst) state <= HEADER_PARSE1;
+        else state <= next_state;
 
 
     always_ff @(posedge clk or posedge rst) begin : state_out
         if (rst) begin
             header <= '0;
         end else begin
-            case (curr_state)
+            case (state)
                 HEADER_PARSE1: begin
                     if (config_valid) begin
                         header.msg_type <= config_data_in[7:0];
@@ -85,13 +86,15 @@ Just ideas, I am going to work on this I just want to push after making the two 
     end
 
     always_comb begin : next_state_logic
-        next_state = curr_state;
-        case (curr_state)
+        next_state = state;
+        case (state)
             HEADER_PARSE1: if (config_valid) next_state = HEADER_PARSE2;
             HEADER_PARSE2: begin
                 if (config_valid) next_state = header.msg_type[0] ? PROCESS_THRESHOLDS : PROCESS_WEIGHTS;
             end
+        PROCESS_WEIGHTS: next_state = config_last ? FINISH_LAYER : PROCESS_WEIGHTS;
         endcase
+        
     end
 
 endmodule : config_manager
