@@ -253,7 +253,11 @@ module ram_neuron_processor_tb #(
           $display("Test passed (time %0t)", $time);
           passed++;
         end else begin
-          $display("Test failed (time %0t): result = %p instead of %p", $time, actual, expected);
+          //$display("Test failed (time %0t): result_pop = %p instead of %p", $time, actual, expected);
+          $display("Test failed (time %0t): result_pop = %p instead of %p", $time,
+                   actual.popcount[0], expected.popcount[j]);
+          $display("Test failed (time %0t): result_y = %p instead of %p", $time, actual.y[0],
+                   expected.y[j]);
           failed++;
         end
       end
