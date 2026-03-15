@@ -266,5 +266,7 @@ module ram_neuron_processor_tb #(
     $display("Tests completed: %0d passed, %0d failed", passed, failed);
     disable generate_clock;
   end
+
+  assert property (@(posedge clk) disable iff (rst) last |-> valid_in);
 endmodule
 
