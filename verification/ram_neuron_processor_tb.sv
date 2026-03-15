@@ -1,143 +1,244 @@
-`timescale 1 ns / 100 ps
+module ram_neuron_processor_tb #(
+    parameter int NUM_TESTS = 1000,
+    parameter int MIN_CYCLES_BETWEEN_TESTS = 1,
+    parameter int MAX_CYCLES_BETWEEN_TESTS = 10,
+    parameter int NEURONS_MAPPED_TO_ME = 1
+);
 
-module ram_neuron_processor_tb;
-
-  // Params
-  parameter int MAX_NEURON_INPUTS = 4;
-  parameter int PW = 2;
-  parameter int NEURONS_MAPPED_TO_ME = 2;
-  parameter bit REG_RD_DATA = 1'b1;
-  parameter string STYLE = "";
-  // we also need some local params from inside the DUT, copied here
+  // Parameters
+  localparam int MAX_NEURON_INPUTS = 16;
+  localparam int PW = 8;
   localparam int THRESHOLD_WIDTH = $clog2(MAX_NEURON_INPUTS + 1);
+
+  localparam int DATA_WIDTH = PW;
   localparam int W_ADDR_WIDTH = $clog2(NEURONS_MAPPED_TO_ME * (MAX_NEURON_INPUTS / PW));
   localparam int T_ADDR_WIDTH = $clog2(NEURONS_MAPPED_TO_ME);
 
-  // Signals
+  // -------------- Testbench signals -------------
   logic                       clk;
   logic                       rst;
 
-  // DUT signals
-  logic                       wram_en_a;
+  // Weight ram Port A (only expose port A; port B used internally)
+  // wram = weight ram
+  logic                       wram_en_a;  // read as wram's en on port A, for example
   logic                       wram_wr_en_a;
   logic [   W_ADDR_WIDTH-1:0] wram_addr_a;
-  logic [             PW-1:0] wram_wr_data_a;
-  logic [             PW-1:0] wram_rd_data_a;
+  logic [     DATA_WIDTH-1:0] wram_wr_data_a;
+  logic [     DATA_WIDTH-1:0] wram_rd_data_a;
+
+  // Threshhold ram Port A (only expose port A; port B used internally)
+  // tram = threshhold ram
   logic                       tram_en_a;
   logic                       tram_wr_en_a;
   logic [   T_ADDR_WIDTH-1:0] tram_addr_a;
   logic [THRESHOLD_WIDTH-1:0] tram_wr_data_a;
   logic [THRESHOLD_WIDTH-1:0] tram_rd_data_a;
+
+  // TODO probably add a buffer or fifo or sm for input
   logic [             PW-1:0] inputs;
+
   logic                       valid_in;
   logic                       last;
   logic                       valid_out;
   logic                       y;
   logic [THRESHOLD_WIDTH-1:0] popcount;
+  // -------------- END Testbench signals -------------
 
-
-  // DUT Instantiation
-  ram_neuron_processor #(
+  // Instantiate DUT
+  neuron_processor #(
       .MAX_NEURON_INPUTS(MAX_NEURON_INPUTS),
-      .NEURONS_MAPPED_TO_ME(NEURONS_MAPPED_TO_ME),
       .PW(PW),
-      .REG_RD_DATA(REG_RD_DATA),
-      .STYLE(STYLE)
+      .NEURONS_MAPPED_TO_ME(NEURONS_MAPPED_TO_ME)
   ) dut (
       .*
   );
 
-  // start the clock
+  // scoreboard stuff
+  int passed, failed;
+
+  // mailboxes
+  mailbox scoreboard_data_mailbox = new;
+  mailbox scoreboard_result_mailbox = new;
+  mailbox driver_mailbox = new;
+
+  // inputs to the dut 
+  class neuron_processor_item;
+    rand bit [PW-1:0] weights[NEURONS_MAPPED_TO_ME * MAX_NEURON_INPUTS/PW - 1:0];
+    rand bit [PW-1:0] inputs[NEURONS_MAPPED_TO_ME * MAX_NEURON_INPUTS/PW - 1:0];
+    rand bit [THRESHOLD_WIDTH-1:0] thresholds[NEURONS_MAPPED_TO_ME-1:0];
+  endclass
+
+  // dut expected output type
+  // TODO in one place you'd like this to be list of results and in other
+  // single result... maybe just make it a list of len1 idk could also make
+  // a seperate struct idk (or unpack the packed one in model I actually like
+  // that one best but idk)
+  // This would require changes to scoreboard, whereever you call model, and
+  // yeah
+  typedef struct {
+    int popcount[NEURONS_MAPPED_TO_ME-1:0];
+    bit y[NEURONS_MAPPED_TO_ME-1:0];
+  } neuron_result_t;
+
+
+  // reference model
+  function neuron_result_t model(neuron_processor_item test_item);
+    automatic neuron_result_t result;
+
+    for (int i = 0; i < NEURONS_MAPPED_TO_ME; i++) begin
+      for (int j = 0; j < MAX_NEURON_INPUTS / PW; j++) begin
+        result.popcount[i] += $countbits(
+            test_item.weights[i*(MAX_NEURON_INPUTS/PW)+j] ~^ test_item.inputs[i*(MAX_NEURON_INPUTS/PW)+j],
+            '1
+        );
+      end
+
+      // set popcount and y
+      result.y[i] = result.popcount[i] >= test_item.thresholds[i];
+    end
+    return result;
+  endfunction
+
+  // Clock generation
   initial begin : generate_clock
-    clk <= '0;
-    #5 forever #5 clk <= ~clk;
+    clk = 0;
+    forever #5 clk = ~clk;
   end
 
-  // generate random weights
-  logic rams_ready;
-  logic [PW-1:0] rand_weights[(1<<W_ADDR_WIDTH)-1:0];
-  logic [THRESHOLD_WIDTH-1:0] rand_threshholds[(1<<T_ADDR_WIDTH)-1:0];
-  logic [PW-1:0] rand_inputs[(1<<W_ADDR_WIDTH)-1:0];
-  int counter;
-  initial begin : generate_input
-    rams_ready <= 1'b0;
-
-    // populate `weights` and `threshholds` vectors with random weights and threshholds
-    // we need them as intermediates since they will also be used to compute
-    // expected outputs
-    for (int i = 0; i < (1 << W_ADDR_WIDTH); i++) begin
-      rand_weights[i] <= $urandom;
-      rand_inputs[i]  <= $urandom;
-    end
-    for (int i = 0; i < (1 << T_ADDR_WIDTH); i++) begin
-      rand_threshholds[i] <= $urandom;
-    end
-
-    // actually write ts to rams :P
-    wram_en_a <= 1'b1;
-    wram_addr_a <= '0;
-    wram_wr_en_a <= 1'b0;
-
-    tram_en_a <= 1'b1;
-    tram_addr_a <= '0;
-    tram_wr_en_a <= 1'b0;
-
-    @(posedge clk);
-
-    for (int i = 0; i < (1 << W_ADDR_WIDTH) - 1; i++) begin
-      wram_en_a <= 1'b1;
-      wram_addr_a <= i;
-      wram_wr_en_a <= 1'b1;
-      wram_wr_data_a <= rand_weights[i];
-
-      @(posedge clk);
-    end
-    wram_en_a <= 1'b0;
-
-    for (int i = 0; i < (1 << T_ADDR_WIDTH) - 1; i++) begin
-      tram_en_a <= 1'b1;
-      tram_addr_a <= i;
-      tram_wr_en_a <= 1'b1;
-      tram_wr_data_a <= rand_weights[i];
-
-      @(posedge clk);
-    end
-    tram_en_a  <= 1'b0;
-
-    rams_ready <= 1'b1;
-  end
-
-  // signals for storing actual outputs
-  initial begin : apply_tests
+  // Initialize the DUT.
+  initial begin : initialization
     $timeformat(-9, 0, " ns");
 
-    // rst and drive valid_in false
+    // Reset the design.
     rst <= 1'b1;
     valid_in <= 1'b0;
     last <= 1'b0;
-    @(negedge clk iff rams_ready == 1'b1);  // wait until rams are ready to start
-    // un-reset
+    wram_en_a <= 1'b0;
+    tram_en_a <= 1'b0;
+    // other ram port stuff left as X (port is disabled so it doesn't matter
+    // that they are X)
+    repeat (5) @(posedge clk);
+    @(negedge clk);
     rst <= 1'b0;
-    @(posedge clk);  // in class dr stitt said he does this 
-                     // i dont remember why tho
+  end
 
+  // Stimulus generation for random tests.
+  initial begin : generator
+    neuron_processor_item test;
 
-    // uses `int counter;` defined above this initial block
-    // input all the inputs :P
-    // assert last as needed
-    counter = 0;
-    for (int i = 0; i < (1 << W_ADDR_WIDTH); i++) begin
-      counter++;
-      inputs <= rand_inputs[i];
-      valid_in <= '1;
-      last <= counter == (MAX_NEURON_INPUTS / PW) ? 1'b1 : 1'b0;
-      counter <= counter == (MAX_NEURON_INPUTS / PW) ? 0 : counter;
+    for (int i = 0; i < NUM_TESTS; i++) begin
+      test = new();
+      assert (test.randomize())
+      else $fatal(1, "Failed to randomize.");
+
+      driver_mailbox.put(test);
+      scoreboard_data_mailbox.put(model(test));
+
+    end
+  end
+
+  // Opted for no start monitor since i have all the test inputs in the
+  // generator block anyways
+  // Monitor to detect the start of execution.
+  // TODO
+  // initial begin : start_monitor
+  // end
+
+  // Monitor to detect the end of execution.
+  neuron_result_t dut_output;
+  initial begin : done_monitor
+    forever begin
+      @(posedge clk iff (valid_out == 1'b0));
+      @(posedge clk iff (valid_out == 1'b1));
+      dut_output.popcount = popcount;
+      dut_output.y = y;
+      scoreboard_result_mailbox.put(dut_output);
+    end
+  end
+
+  // driver TODO
+  // load all rams and then input all inputs ig
+  // could either run until valid_out is asserted NEURONS_MAPPED_TO_ME times 
+  // or
+  // just count all the inputs and iterate that many times idk
+  initial begin : driver
+    neuron_processor_item item;
+    int addr;  // use int to make my life easier
+    @(posedge clk iff !rst);
+    forever begin
+      driver_mailbox.get(item);
+
+      // write weights to ram
+      addr = 0;
+      for (int i = 0; i < NEURONS_MAPPED_TO_ME * MAX_NEURON_INPUTS / PW; i++) begin
+        wram_en_a <= 1'b1;
+        wram_wr_en_a <= 1'b1;
+        wram_addr_a <= addr;
+        wram_wr_data_a <= item.weights[i];
+
+        valid_in <= 1'b0;  // not needed but can't hurt
+        addr <= addr + 1;
+        @(posedge clk);
+      end
+
+      wram_en_a <= 1'b0;
+      @(posedge clk);
+
+      // write thresholds to ram
+      addr = 0;
+      for (int i = 0; i < NEURONS_MAPPED_TO_ME; i++) begin
+        tram_en_a <= 1'b1;
+        tram_wr_en_a <= 1'b1;
+        tram_addr_a <= addr;
+        tram_wr_data_a <= item.thresholds[i];
+
+        valid_in <= 1'b0;  // not needed but can't hurt
+        addr <= addr + 1;
+        @(posedge clk);
+      end
+
+      tram_en_a <= 1'b0;
+      @(posedge clk);
+
+      // atp all of the weights and thresholds are in ram :)
+      // time to send inputs!
+
+      // TODO send all the inputs!
+
+      // Wait a random amount of time in between tests.
+      repeat ($urandom_range(MIN_CYCLES_BETWEEN_TESTS - 1, MAX_CYCLES_BETWEEN_TESTS - 1));
       @(posedge clk);
     end
+  end
 
-    @(negedge clk iff valid_out == 1'b1);
+  initial begin : scoreboard
+    neuron_result_t expected, actual;
 
-    $display("Tests completed.");
+    passed = 0;
+    failed = 0;
+
+    for (int i = 0; i < NUM_TESTS; i++) begin
+      // "packed" | all neurons that are mapped put into one
+      // tldr: contains `NEURONS_MAPPED_TO_ME` popcounts
+      scoreboard_data_mailbox.get(expected);
+
+      for (int j = 0; j < NEURONS_MAPPED_TO_ME; j++) begin
+        // single
+        // tldr: contains 1 popcount
+        scoreboard_result_mailbox.get(actual);
+
+        if (actual == expected) begin
+          $display("Test passed (time %0t)", $time);
+          passed++;
+        end else begin
+          $display("Test failed (time %0t): result = %p instead of %p", $time, actual, expected);
+          failed++;
+        end
+      end
+    end
+
+    $display("Tests completed: %0d passed, %0d failed", passed, failed);
     disable generate_clock;
   end
 endmodule
+
