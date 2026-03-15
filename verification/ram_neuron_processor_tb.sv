@@ -2,7 +2,7 @@ module ram_neuron_processor_tb #(
     parameter int NUM_TESTS = 1000,
     parameter int MIN_CYCLES_BETWEEN_TESTS = 1,
     parameter int MAX_CYCLES_BETWEEN_TESTS = 10,
-    parameter int NEURONS_MAPPED_TO_ME = 2
+    parameter int NEURONS_MAPPED_TO_ME = 5
 );
 
   // Parameters

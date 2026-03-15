@@ -86,7 +86,7 @@ module ram_neuron_processor #(
       next_last_was_set = 1'b0;
     end
 
-    if (tram_addr_r == NEURONS_MAPPED_TO_ME - 1) next_tram_addr = '0;
+    if (tram_addr_r == NEURONS_MAPPED_TO_ME) next_tram_addr = '0;
   end
 
   /* STRUCTURAL STUFF */
