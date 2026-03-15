@@ -45,7 +45,7 @@ module ram_neuron_processor_tb #(
   // -------------- END Testbench signals -------------
 
   // Instantiate DUT
-  neuron_processor #(
+  ram_neuron_processor #(
       .MAX_NEURON_INPUTS(MAX_NEURON_INPUTS),
       .PW(PW),
       .NEURONS_MAPPED_TO_ME(NEURONS_MAPPED_TO_ME)
@@ -150,8 +150,8 @@ module ram_neuron_processor_tb #(
     forever begin
       @(posedge clk iff (valid_out == 1'b0));
       @(posedge clk iff (valid_out == 1'b1));
-      dut_output.popcount = popcount;
-      dut_output.y = y;
+      dut_output.popcount[0] = popcount;
+      dut_output.y[0] = y;
       scoreboard_result_mailbox.put(dut_output);
     end
   end
@@ -204,6 +204,26 @@ module ram_neuron_processor_tb #(
       // time to send inputs!
 
       // TODO send all the inputs!
+      for (int i = 0; i < NEURONS_MAPPED_TO_ME; i++) begin
+        for (int j = 0; j < MAX_NEURON_INPUTS / PW - 1; j++) begin
+          inputs <= item.inputs[i*(MAX_NEURON_INPUTS/PW-1)+j];
+          valid_in <= 1'b1;
+          last <= 1'b0;
+          @(posedge clk);
+        end
+
+        inputs <= item.inputs[i*(MAX_NEURON_INPUTS/PW-1)+MAX_NEURON_INPUTS/PW-1];
+        valid_in <= 1'b1;
+        last <= 1'b1;
+        @(posedge clk);
+      end
+
+      // wait for NEURONS_MAPPED_TO_ME valid_outs
+      valid_in <= 1'b0;
+      last <= 1'b0;
+      for (int i = 0; i < NEURONS_MAPPED_TO_ME; i++) begin
+        @(posedge clk iff valid_out);
+      end
 
       // Wait a random amount of time in between tests.
       repeat ($urandom_range(MIN_CYCLES_BETWEEN_TESTS - 1, MAX_CYCLES_BETWEEN_TESTS - 1));
@@ -227,7 +247,7 @@ module ram_neuron_processor_tb #(
         // tldr: contains 1 popcount
         scoreboard_result_mailbox.get(actual);
 
-        if (actual == expected) begin
+        if (actual.popcount[0] == expected.popcount[j] && actual.y[0] == expected.y[j]) begin
           $display("Test passed (time %0t)", $time);
           passed++;
         end else begin
