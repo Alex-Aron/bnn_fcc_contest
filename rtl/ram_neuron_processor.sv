@@ -76,7 +76,7 @@ module ram_neuron_processor #(
     // valid_in = 1 implies we used the current weights, so move to next
     if (valid_in) next_wram_addr = wram_addr_r + 1'b1;
 
-    if (last) next_wram_addr = '0;
+    if (wram_addr_r == NEURONS_MAPPED_TO_ME * MAX_NEURON_INPUTS / PW - 1) next_wram_addr = '0;
 
     // if last = 1, we need to reset adress registers (in reality we have to schedule that
     // reset)
@@ -84,8 +84,9 @@ module ram_neuron_processor #(
 
     if (last_was_set_r & valid_out) begin
       next_last_was_set = 1'b0;
-      next_tram_addr = '0;
     end
+
+    if (tram_addr_r == NEURONS_MAPPED_TO_ME - 1) next_tram_addr = '0;
   end
 
   /* STRUCTURAL STUFF */
