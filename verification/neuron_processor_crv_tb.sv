@@ -1,6 +1,9 @@
-module tb_neuron_processor #(
-    parameter int NUM_TESTS = 1000,
-    parameter bit TOGGLE_INPUTS_WHILE_ACTIVE = 1'b0,
+// KNOWN BUG:
+// fails if MAX_NEURON_INPUTS == PW (I feel like it's DUT's fault, not tb's
+// fault)
+
+module neuron_processor_crv_tb #(
+    parameter int NUM_TESTS = 10000,
     parameter int MIN_CYCLES_BETWEEN_TESTS = 1,
     parameter int MAX_CYCLES_BETWEEN_TESTS = 10
 );
@@ -57,27 +60,18 @@ module tb_neuron_processor #(
     automatic neuron_result_t result;
     result.popcount = 0;
     for (int i = 0; i < MAX_NEURON_INPUTS / PW; i++) begin
-      result.popcount += $count_ones(test_item.weights[i] ~^ test_item.inputs[i]);
+      result.popcount += $countbits(test_item.weights[i] ~^ test_item.inputs[i], '1);
     end
 
-    result.y = result.popcount > test_item.threshold;
+    result.y = result.popcount >= test_item.threshold;
 
     return result;
   endfunction
 
   // Clock generation
-  initial begin
+  initial begin : generate_clock
     clk = 0;
     forever #5 clk = ~clk;
-  end
-
-  neuron_result_t dut_output;
-  initial begin
-    forever begin
-      @(posedge clk);
-      dut_output.popcount <= popcount;
-      dut_output.y <= y;
-    end
   end
 
   // Initialize the DUT.
@@ -119,10 +113,13 @@ module tb_neuron_processor #(
   // end
 
   // Monitor to detect the end of execution.
+  neuron_result_t dut_output;
   initial begin : done_monitor
     forever begin
       @(posedge clk iff (valid_out == 1'b0));
       @(posedge clk iff (valid_out == 1'b1));
+      dut_output.popcount = popcount;
+      dut_output.y = y;
       scoreboard_result_mailbox.put(dut_output);
     end
   end
@@ -155,24 +152,22 @@ module tb_neuron_processor #(
       @(posedge clk iff (valid_out == 1'b1));
 
       // Wait a random amount of time in between tests.
-      repeat ($urandom_range(
-          MIN_CYCLES_BETWEEN_TESTS - 1, MAX_CYCLES_BETWEEN_TESTS - 1
-      ))
+      repeat ($urandom_range(MIN_CYCLES_BETWEEN_TESTS - 1, MAX_CYCLES_BETWEEN_TESTS - 1));
       @(posedge clk);
     end
   end
 
   initial begin : scoreboard
+    neuron_result_t expected, actual;
+
     passed = 0;
     failed = 0;
-
-    neuron_result_t expected, actual;
 
     for (int i = 0; i < NUM_TESTS; i++) begin
       scoreboard_data_mailbox.get(expected);
       scoreboard_result_mailbox.get(actual);
 
-      if (result == expected) begin
+      if (actual == expected) begin
         $display("Test passed (time %0t)", $time);
         passed++;
       end else begin
@@ -186,3 +181,5 @@ module tb_neuron_processor #(
   end
 
 endmodule
+
+
