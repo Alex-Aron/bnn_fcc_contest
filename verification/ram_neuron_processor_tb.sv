@@ -2,7 +2,7 @@ module ram_neuron_processor_tb #(
     parameter int NUM_TESTS = 1000,
     parameter int MIN_CYCLES_BETWEEN_TESTS = 1,
     parameter int MAX_CYCLES_BETWEEN_TESTS = 10,
-    parameter int NEURONS_MAPPED_TO_ME = 1
+    parameter int NEURONS_MAPPED_TO_ME = 2
 );
 
   // Parameters
@@ -146,10 +146,13 @@ module ram_neuron_processor_tb #(
 
   // Monitor to detect the end of execution.
   neuron_result_t dut_output;
+  int valid_out_counter;
   initial begin : done_monitor
+    valid_out_counter = 0;
     forever begin
       @(posedge clk iff (valid_out == 1'b0));
       @(posedge clk iff (valid_out == 1'b1));
+      valid_out_counter += 1;
       dut_output.popcount[0] = popcount;
       dut_output.y[0] = y;
       scoreboard_result_mailbox.put(dut_output);
@@ -198,6 +201,7 @@ module ram_neuron_processor_tb #(
       end
 
       tram_en_a <= 1'b0;
+      valid_out_counter = 0;
       @(posedge clk);
 
       // atp all of the weights and thresholds are in ram :)
@@ -206,13 +210,13 @@ module ram_neuron_processor_tb #(
       // TODO send all the inputs!
       for (int i = 0; i < NEURONS_MAPPED_TO_ME; i++) begin
         for (int j = 0; j < MAX_NEURON_INPUTS / PW - 1; j++) begin
-          inputs <= item.inputs[i*(MAX_NEURON_INPUTS/PW-1)+j];
+          inputs <= item.inputs[i*(MAX_NEURON_INPUTS/PW)+j];
           valid_in <= 1'b1;
           last <= 1'b0;
           @(posedge clk);
         end
 
-        inputs <= item.inputs[i*(MAX_NEURON_INPUTS/PW-1)+MAX_NEURON_INPUTS/PW-1];
+        inputs <= item.inputs[i*(MAX_NEURON_INPUTS/PW)+MAX_NEURON_INPUTS/PW-1];
         valid_in <= 1'b1;
         last <= 1'b1;
         @(posedge clk);
@@ -221,9 +225,7 @@ module ram_neuron_processor_tb #(
       // wait for NEURONS_MAPPED_TO_ME valid_outs
       valid_in <= 1'b0;
       last <= 1'b0;
-      for (int i = 0; i < NEURONS_MAPPED_TO_ME; i++) begin
-        @(posedge clk iff valid_out);
-      end
+      @(posedge clk iff valid_out_counter == NEURONS_MAPPED_TO_ME);
 
       // Wait a random amount of time in between tests.
       repeat ($urandom_range(MIN_CYCLES_BETWEEN_TESTS - 1, MAX_CYCLES_BETWEEN_TESTS - 1));
