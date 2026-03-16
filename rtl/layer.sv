@@ -14,19 +14,31 @@ module layer #(
     input logic clk,
     input logic rst,
 
+    input logic [PW-1:0] layer_inputs,
+    input logic input_valid,
+
     input logic [8-1:0] weight,
     input logic weight_valid,
 
     input logic [32-1:0] threshold,
-    input logic threshold_valid
+    input logic threshold_valid,
+
+    output logic [PN-1:0] ys,
+    output logic [THRESHOLD_WIDTH-1:0] popcounts[PN-1:0],
+    output logic layer_valid_out
 );
+  assign ys = '0;  //TODO
+  for (genvar i = 0; i < PN; i++) begin
+    assign popcounts[i] = '0;
+  end
+
   /* --------------- ALL RAM NP SIGNALS      ---------------------*/
   // packed list of all the wram write ports
   logic                       wram_en_a     [PN-1:0];
   logic                       wram_wr_en_a  [PN-1:0];
   logic [   W_ADDR_WIDTH-1:0] wram_addr_a   [PN-1:0];
-  logic [     DATA_WIDTH-1:0] wram_wr_data_a[PN-1:0];
-  logic [     DATA_WIDTH-1:0] wram_rd_data_a[PN-1:0];
+  logic [             PW-1:0] wram_wr_data_a[PN-1:0];
+  logic [             PW-1:0] wram_rd_data_a[PN-1:0];
 
   // packed list of all the tram write ports
   logic                       tram_en_a     [PN-1:0];
@@ -75,7 +87,7 @@ module layer #(
   // take the config stream and write to tram's
   // TODO add something to ignore first thresholds if not first layer
   // TODO add something to ignore trailing thresholds if not in last layer
-  logic [  $clog2(NP)-1:0] t_current_np;  // max value is NP-1
+  logic [  $clog2(PN)-1:0] t_current_np;  // max value is PN-1
   logic [T_ADDR_WIDTH-1:0] current_tram_addr_a;
   always_ff @(posedge clk or posedge rst) begin : program_tram
     // the default is that all the tram ports are disabled
@@ -107,7 +119,7 @@ module layer #(
   // take the config stream and write to wrams
   // TODO add something to ignore first weights if not first layer
   // TODO add something to ignore trailing weights if not in last layer
-  logic [  $clog2(NP)-1:0] t_current_np;  // max value is NP-1
+  logic [  $clog2(PN)-1:0] w_current_np;  // max value is NP-1
   logic [W_ADDR_WIDTH-1:0] current_wram_addr_a;
   always_ff @(posedge clk or posedge rst) begin : program_wram
     // the default is that all the tram ports are disabled
@@ -116,20 +128,20 @@ module layer #(
     end
 
     if (rst) begin
-      t_current_np <= '0;
+      w_current_np <= '0;
       current_wram_addr_a <= '0;
     end else begin
       if (weight_valid) begin
         // write the threshold
-        wram_en_a[t_current_np] <= 1'b1;
-        wram_wr_en_a[t_current_np] <= 1'b1;  // TODO just hard code this to be 1
-        wram_addr_a[t_current_np] <= current_wram_addr_a;
-        wram_wr_data_a[t_current_np] <= weight; // todo add some way to handle different sized weights
+        wram_en_a[w_current_np] <= 1'b1;
+        wram_wr_en_a[w_current_np] <= 1'b1;  // TODO just hard code this to be 1
+        wram_addr_a[w_current_np] <= current_wram_addr_a;
+        wram_wr_data_a[w_current_np] <= weight; // todo add some way to handle different sized weights
 
         // increment values as needed
         current_wram_addr_a <= current_wram_addr_a + 1;
         if (current_wram_addr_a == MAX_NEURON_INPUTS / PW * NEURONS_MAPPED_TO_ME - 1) begin
-          t_current_np <= t_current_np + 1;
+          w_current_np <= w_current_np + 1;
           current_wram_addr_a <= '0;
         end
       end
