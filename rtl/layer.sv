@@ -1,3 +1,7 @@
+// TODO's
+// somehow ignore certain w and t
+// support PW!=8 how
+
 module layer #(
     /* parameters for neuron neuron_processor */
     parameter int MAX_NEURON_INPUTS = 16,  // total inputs per neuron
@@ -85,7 +89,6 @@ module layer #(
 
   // input buffer that holds MAX_NEURON_INPUTS/PW sets of inputs until they
   // are used by every neuron
-  // TODO the tb assumes this doesn't exist
   logic [$clog2(MAX_NEURON_INPUTS/PW)-1:0] valid_in_count;
   logic [$clog2(NEURONS_IN_THIS_LAYER/PN)-1:0] valid_out_count;
   logic [PW-1:0] input_buffer[MAX_NEURON_INPUTS/PW-1:0];
