@@ -27,10 +27,9 @@ module layer #(
     output logic [THRESHOLD_WIDTH-1:0] popcounts[PN-1:0],
     output logic layer_valid_out
 );
-  assign ys = '0;  //TODO
-  for (genvar i = 0; i < PN; i++) begin
-    assign popcounts[i] = '0;
-  end
+  assign ys = y;
+  assign popcounts = popcount;
+  assign layer_valid_out = valid_out[0];  // all neurons in a layer output at the same time
 
   /* --------------- ALL RAM NP SIGNALS      ---------------------*/
   // packed list of all the wram write ports
@@ -82,6 +81,94 @@ module layer #(
         .y(y[i]),
         .popcount(popcount[i])
     );
+  end
+
+  // input buffer that holds MAX_NEURON_INPUTS/PW sets of inputs until they
+  // are used by every neuron
+  // TODO the tb assumes this doesn't exist
+  logic [$clog2(MAX_NEURON_INPUTS/PW)-1:0] valid_in_count;
+  logic [$clog2(NEURONS_IN_THIS_LAYER/PN)-1:0] valid_out_count;
+  logic [PW-1:0] input_buffer[MAX_NEURON_INPUTS/PW-1:0];
+  logic input_buffer_full;
+  always_ff @(posedge clk or posedge rst) begin
+    // the default is that all the neurons are disabled
+    for (int i = 0; i < PN; i++) begin
+      valid_in[i] <= 1'b0;
+    end
+
+    if (rst) begin
+      input_buffer_full <= 1'b0;
+      valid_in_count <= '0;
+      valid_out_count <= '0;
+      for (int i = 0; i < MAX_NEURON_INPUTS / PW; i++) begin
+        input_buffer[i] <= '0;
+      end
+    end else begin
+      // if the input buffer isn't full, this is a new input
+      if (!input_buffer_full && input_valid) begin
+        // 0. increment valid_in_count
+        valid_in_count <= valid_in_count + 1;
+
+        // 1. store to input buffer
+        for (int i = 0; i < MAX_NEURON_INPUTS / PW - 1; i++) begin
+          input_buffer[i] <= input_buffer[i+1];
+        end
+        input_buffer[MAX_NEURON_INPUTS/PW-1] <= layer_inputs;
+
+        // 2. send to neurons in the layer
+        for (int i = 0; i < PN; i++) begin
+          inputs[i]   <= layer_inputs;
+          valid_in[i] <= 1'b1;
+        end
+
+        // 3. check if input buffer full
+        // (more like check if the buffer will be full after this input)
+        // (more like check if the buffer is one away from being full)
+        if (valid_in_count == MAX_NEURON_INPUTS / PW - 1) begin
+          if (NEURONS_MAPPED_TO_ME != 1) begin
+            input_buffer_full <= 1'b1;
+          end
+          valid_in_count <= '0;  // we can safely reset this here
+          for (int i = 0; i < PN; i++) begin
+            last[i] <= 1'b1;
+            valid_out_count <= valid_out_count + 1;
+          end
+        end
+      end
+
+      // if the input buffer is full...
+      // we have all the inputs already! spam them each cycle until they are
+      // completely consumed by every neuron in this layer
+      if (input_buffer_full) begin
+        // we have already sent the input in MAX_NEURON_INPUTS/PW times, 
+        // we have to send it in a total of MAX_NEURON_INPUTS/PW * NEURONS_MAPPED_TO_ME times
+        // in other words, we are busy consuming this input for another
+        // MAX_NEURON_INPUTS/PW * NEURONS_MAPPED_TO_ME - MAX_NEURON_INPUTS/PW
+        // or
+        // MAX_NEURON_INPUTS/PW * (NEURONS_MAPPED_TO_ME - 1) <------ assume NEURONS_MAPPED_TO_ME is > 1
+        // cycles
+
+        valid_in_count <= valid_in_count + 1;
+        for (int i = 0; i < PN; i++) begin
+          inputs[i]   <= input_buffer[valid_in_count];
+          valid_in[i] <= 1'b1;
+        end
+
+        if (valid_in_count == MAX_NEURON_INPUTS / PW - 1) begin
+          for (int i = 0; i < PN; i++) begin
+            last[i] <= 1'b1;
+          end
+
+          valid_out_count <= valid_out_count + 1;
+          valid_in_count  <= '0;
+
+          if (valid_out_count + 1 == NEURONS_MAPPED_TO_ME) begin
+            valid_out_count   <= '0;
+            input_buffer_full <= '0;
+          end
+        end
+      end
+    end
   end
 
   // take the config stream and write to tram's
