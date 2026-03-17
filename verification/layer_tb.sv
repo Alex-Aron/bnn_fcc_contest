@@ -168,7 +168,7 @@ module layer_tb #(
       driver_mailbox.get(item);
 
       // program weights and thresholds
-      while (thresholds_sent < NEURONS_IN_THIS_LAYER && weights_sent < NEURONS_IN_THIS_LAYER * MAX_NEURON_INPUTS/PW) begin
+      while (thresholds_sent < NEURONS_IN_THIS_LAYER || weights_sent < NEURONS_IN_THIS_LAYER * MAX_NEURON_INPUTS/PW) begin
         // le default values
         threshold_valid <= 1'b0;
         weight_valid <= 1'b0;
@@ -187,6 +187,8 @@ module layer_tb #(
         end
         @(posedge clk);
       end
+      thresholds_sent = 0;
+      weights_sent = 0;
 
       threshold_valid <= 1'b0;
       weight_valid <= 1'b0;
@@ -202,9 +204,9 @@ module layer_tb #(
       input_valid <= 1'b0;
 
       // wait for NEURONS_IN_THIS_LAYER/PN valid_outs (RE DO ME)
-      input_valid <= 1'b0;
       //last <= 1'b0;
       @(posedge clk iff valid_out_counter == NEURONS_IN_THIS_LAYER / PN);
+      valid_out_counter <= '0;
 
       // Wait a random amount of time in between tests.
       repeat ($urandom_range(MIN_CYCLES_BETWEEN_TESTS - 1, MAX_CYCLES_BETWEEN_TESTS - 1));

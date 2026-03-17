@@ -234,7 +234,7 @@ module layer #(
           neuron_offset <= '0;
           w_current_np  <= w_current_np + 1;
           if (w_current_np == PN - 1) begin
-            current_wram_addr_a <= current_wram_addr_a + 1;
+            current_wram_addr_a <= current_wram_addr_a + MAX_NEURON_INPUTS / PW;
             w_current_np <= '0;
           end
         end
