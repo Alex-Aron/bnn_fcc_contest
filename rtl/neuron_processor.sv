@@ -14,36 +14,36 @@ module neuron_processor #(
     output logic                       y,
     output logic [THRESHOLD_WIDTH-1:0] popcount
 );
-    logic v_out;
-    logic [THRESHOLD_WIDTH-1:0] popcount_r, pop_out, next_pop;
+  logic [THRESHOLD_WIDTH-1:0] popcount_r, pop_out, next_pop;
+  logic v_out;
 
-    assign popcount  = pop_out;
-    assign valid_out = v_out;
+  assign y = (pop_out >= threshold) ? 1 : 0;
+  assign popcount = pop_out;
+  assign valid_out = v_out;
 
-    always_ff @(posedge clk or posedge rst) begin
-        if (rst) begin
-            y <= 1'b0;
-            popcount_r <= '0;
-            v_out <= '0;
-            pop_out <= '0;
-        end else if (valid_in) begin
-            if (last) begin
-                popcount_r <= '0;
-                pop_out <= next_pop;
-                y <= (next_pop >= threshold) ? 1 : 0;
-                v_out <= '1;
-            end else begin
-                popcount_r <= next_pop;
-                v_out <= '0;
-            end
-        end else begin
-            v_out <= '0;
-        end
+  always_ff @(posedge clk or posedge rst) begin
+    if (rst) begin
+      popcount_r <= '0;
+      v_out <= '0;
+      pop_out <= '0;
+    end else begin
+      if (last && valid_in) begin
+        popcount_r <= '0;
+        pop_out <= next_pop;
+        v_out <= '1;
+      end else begin
+        popcount_r <= next_pop;
+        v_out <= '0;
+        pop_out <= '0;
+      end
     end
 
-    always_comb begin
-        next_pop = popcount_r;
-        if (valid_in) next_pop = popcount_r + $countones(weights ~^ inputs);
-    end
+  end
+
+  always_comb begin
+    next_pop = popcount_r;
+    if (valid_in)
+      next_pop = popcount_r + THRESHOLD_WIDTH'(unsigned'($countones(weights ~^ inputs)));
+  end
 
 endmodule : neuron_processor

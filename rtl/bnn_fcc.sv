@@ -12,7 +12,7 @@
 module bnn_fcc #(
     parameter int INPUT_DATA_WIDTH  = 8,
     parameter int INPUT_BUS_WIDTH   = 64,
-    parameter int CONFIG_BUS_WIDTH  = 32,
+    parameter int CONFIG_BUS_WIDTH  = 64,
     parameter int OUTPUT_DATA_WIDTH = 4,
     parameter int OUTPUT_BUS_WIDTH  = 8,
 
@@ -98,10 +98,10 @@ module bnn_fcc #(
         .config_keep          (config_keep),
         .config_last          (config_last),
         .config_ready         (config_ready),
-        .weight_ram_wr_data   (weight_wr_data),
-        .weight_ram_wr_en     (weight_wr_en),
-        .threshold_ram_wr_data(threshold_wr_data),
-        .threshold_ram_wr_en  (threshold_wr_en)
+        .weight_wr_data   (weight_wr_data),
+        .weight_wr_en     (weight_wr_en),
+        .threshold_wr_data(threshold_wr_data),
+        .threshold_wr_en  (threshold_wr_en)
     );
 
     assign pixels = {<<INPUT_DATA_WIDTH{data_in_data}};
