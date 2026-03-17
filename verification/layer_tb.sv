@@ -9,6 +9,7 @@ module layer_tb #(
   localparam int PW = 8;
   localparam int PN = 5;
   localparam int NEURONS_IN_THIS_LAYER = 10;
+  localparam int SETS_OF_INPUTS = 2;
 
   localparam int NEURONS_MAPPED_TO_ME = NEURONS_IN_THIS_LAYER / PN;
 
@@ -62,13 +63,13 @@ module layer_tb #(
   // inputs to the dut 
   class neuron_processor_item;
     rand bit [PW-1:0] weights[NEURONS_IN_THIS_LAYER * MAX_NEURON_INPUTS/PW - 1:0];
-    rand bit [PW-1:0] layer_inputs[MAX_NEURON_INPUTS/PW-1:0];
+    rand bit [PW-1:0] layer_inputs[SETS_OF_INPUTS*MAX_NEURON_INPUTS/PW-1:0];
     rand bit [THRESHOLD_WIDTH-1:0] thresholds[NEURONS_IN_THIS_LAYER-1:0];
   endclass
 
   typedef struct {
-    int popcount[NEURONS_IN_THIS_LAYER-1:0];
-    bit y[NEURONS_IN_THIS_LAYER-1:0];
+    int popcount[SETS_OF_INPUTS*NEURONS_IN_THIS_LAYER-1:0];
+    bit y[SETS_OF_INPUTS*NEURONS_IN_THIS_LAYER-1:0];
   } neuron_result_t;
 
 
@@ -84,19 +85,21 @@ module layer_tb #(
       result.y[i] = 1'b0;
     end
 
-    for (int i = 0; i < NEURONS_IN_THIS_LAYER; i++) begin
-      for (int j = 0; j < MAX_NEURON_INPUTS / PW; j++) begin
-        result.popcount[i] += $countones(
-            test_item.weights[i*(MAX_NEURON_INPUTS/PW)+j] ~^ test_item.layer_inputs[j]
-        );
-        //if (id == 0) begin
-        //$display("result.pop = %h; weight = %h; input = %h;", result.popcount[i],
-        //test_item.weights[i*(MAX_NEURON_INPUTS/PW)+j], test_item.layer_inputs[j]);
-        //end
-      end
+    for (int k = 0; k < SETS_OF_INPUTS; k++) begin
+      for (int i = 0; i < NEURONS_IN_THIS_LAYER; i++) begin
+        for (int j = 0; j < MAX_NEURON_INPUTS / PW; j++) begin
+          result.popcount[NEURONS_IN_THIS_LAYER*k+i] += $countones(
+              test_item.weights[i*(MAX_NEURON_INPUTS/PW)+j] ~^ test_item.layer_inputs[NEURONS_IN_THIS_LAYER*k+j]
+          );
+          //if (id == 0) begin
+          //$display("result.pop = %h; weight = %h; input = %h;", result.popcount[i],
+          //test_item.weights[i*(MAX_NEURON_INPUTS/PW)+j], test_item.layer_inputs[j]);
+          //end
+        end
 
-      // set popcount and y
-      result.y[i] = result.popcount[i] >= test_item.thresholds[i];
+        // set popcount and y
+        result.y[NEURONS_IN_THIS_LAYER*k+i] = result.popcount[NEURONS_IN_THIS_LAYER*k+i] >= test_item.thresholds[NEURONS_IN_THIS_LAYER*k+i];
+      end
     end
 
     return result;
@@ -195,7 +198,7 @@ module layer_tb #(
       @(posedge clk);
 
       // send the entire input list once
-      for (int i = 0; i < MAX_NEURON_INPUTS / PW; i++) begin
+      for (int i = 0; i < SETS_OF_INPUTS * MAX_NEURON_INPUTS / PW; i++) begin
         input_valid  <= 1'b1;
         layer_inputs <= item.layer_inputs[i];
         @(posedge clk);
@@ -205,7 +208,7 @@ module layer_tb #(
 
       // wait for NEURONS_IN_THIS_LAYER/PN valid_outs (RE DO ME)
       //last <= 1'b0;
-      @(posedge clk iff valid_out_counter == NEURONS_IN_THIS_LAYER / PN);
+      @(posedge clk iff valid_out_counter == SETS_OF_INPUTS * NEURONS_IN_THIS_LAYER / PN);
       valid_out_counter <= '0;
 
       // Wait a random amount of time in between tests.
@@ -221,10 +224,11 @@ module layer_tb #(
     failed = 0;
 
     for (int i = 0; i < NUM_TESTS; i++) begin
-      // this has popcounts and ys from all neruons in the layer
+      // this has popcounts and ys from all neruons in the layer for each set
+      // of inputs
       scoreboard_data_mailbox.get(expected);
 
-      for (int j = 0; j < NEURONS_IN_THIS_LAYER / PN; j++) begin
+      for (int j = 0; j < SETS_OF_INPUTS * NEURONS_IN_THIS_LAYER / PN; j++) begin
         // this has popcounts and ys from PN neruons in the layer
         scoreboard_result_mailbox.get(actual);
 
