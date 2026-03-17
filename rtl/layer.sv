@@ -8,12 +8,16 @@ module layer #(
     parameter int PW = 8,  // weights inputs that can be processed in one pass
     parameter int PN = 5,
     parameter int NEURONS_IN_THIS_LAYER = 10,
+    parameter int FIFO_SAFTEY_FACTOR = 4,
+
     localparam int THRESHOLD_WIDTH = $clog2(MAX_NEURON_INPUTS + 1),
 
     /* parameters for ram */
     localparam int W_ADDR_WIDTH = $clog2(NEURONS_MAPPED_TO_ME * (MAX_NEURON_INPUTS / PW)),
     localparam int T_ADDR_WIDTH = $clog2(NEURONS_MAPPED_TO_ME),
     localparam int NEURONS_MAPPED_TO_ME = NEURONS_IN_THIS_LAYER / PN  // ASSUME this works 
+
+
 ) (
     input logic clk,
     input logic rst,
@@ -55,6 +59,16 @@ module layer #(
   logic [THRESHOLD_WIDTH-1:0] popcount      [PN-1:0];
   /* --------------- END ALL RAM NP SIGNALS      ---------------------*/
 
+  /* ---------------  ALL INPUT BUFFER FIFO      ---------------------*/
+  logic                       fifo_full;
+  logic                       fifo_wr_en;
+  logic [             PW-1:0] fifo_wr_data;
+  logic                       fifo_empty;
+  logic                       fifo_rd_en;
+  logic [             PW-1:0] fifo_rd_data;
+  /* ---------------  END ALL INPUT BUFFER FIFO      ---------------------*/
+
+  // assign outputs
   assign ys = y;
   assign popcounts = popcount;
   assign layer_valid_out = valid_out[0];  // all neurons in a layer output at the same time
@@ -87,18 +101,42 @@ module layer #(
     );
   end
 
+  // create the fifo that will feed the input buffer shift register thingy
+  fifo #(
+      .WIDTH(PW),
+      .DEPTH(FIFO_SAFTEY_FACTOR * MAX_NEURON_INPUTS / PW)
+  ) alexander_aron_is_my_guily_pleasure (
+      .clk(clk),
+      .rst(rst),
+      .full(fifo_full),
+      .wr_en(fifo_wr_en),
+      .wr_data(fifo_wr_data),
+      .empty(fifo_empty),
+      .rd_en(fifo_rd_en),
+      .rd_data(fifo_rd_data)
+  );
+
+  // valid inputs always go to the fifo first
+  assign fifo_wr_data = layer_inputs;
+  assign fifo_wr_en   = input_valid;
+
   // input buffer that holds MAX_NEURON_INPUTS/PW sets of inputs until they
   // are used by every neuron
   logic [$clog2(MAX_NEURON_INPUTS/PW)-1:0] valid_in_count;
   logic [$clog2(NEURONS_IN_THIS_LAYER/PN)-1:0] valid_out_count;
   logic [PW-1:0] input_buffer[MAX_NEURON_INPUTS/PW-1:0];
   logic input_buffer_full;
+
+  logic fifo_rd_valid;
+
+  assign fifo_rd_en = !input_buffer_full && !fifo_empty && valid_in_count < MAX_NEURON_INPUTS / PW - 1;
   always_ff @(posedge clk or posedge rst) begin
     // the default is that all the neurons are disabled
     for (int i = 0; i < PN; i++) begin
       valid_in[i] <= 1'b0;
       last[i] <= 1'b0;
     end
+    fifo_rd_valid <= 1'b0;
 
     if (rst) begin
       input_buffer_full <= 1'b0;
@@ -108,8 +146,12 @@ module layer #(
         input_buffer[i] <= '0;
       end
     end else begin
+      if (fifo_rd_en) begin
+        fifo_rd_valid <= 1'b1;
+      end
+
       // if the input buffer isn't full, this is a new input
-      if (!input_buffer_full && input_valid) begin
+      if (!input_buffer_full && fifo_rd_valid) begin
         // 0. increment valid_in_count
         valid_in_count <= valid_in_count + 1;
 
@@ -117,11 +159,11 @@ module layer #(
         for (int i = 0; i < MAX_NEURON_INPUTS / PW - 1; i++) begin
           input_buffer[i] <= input_buffer[i+1];
         end
-        input_buffer[MAX_NEURON_INPUTS/PW-1] <= layer_inputs;
+        input_buffer[MAX_NEURON_INPUTS/PW-1] <= fifo_rd_data;
 
         // 2. send to neurons in the layer
         for (int i = 0; i < PN; i++) begin
-          inputs[i]   <= layer_inputs;
+          inputs[i]   <= fifo_rd_data;
           valid_in[i] <= 1'b1;
         end
 
@@ -246,4 +288,3 @@ module layer #(
   end
 
 endmodule : layer
-
