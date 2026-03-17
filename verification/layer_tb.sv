@@ -74,18 +74,31 @@ module layer_tb #(
 
   // reference model
   // returns results for each neruon in the layer
-  function neuron_result_t model(neuron_processor_item test_item);
+  function neuron_result_t model(neuron_processor_item test_item, int id);
     automatic neuron_result_t result;
+    //if (id == 0) begin
+    //$display("---------------");
+    //end
+    for (int i = 0; i < NEURONS_IN_THIS_LAYER; i++) begin
+      result.popcount[i] = 0;
+      result.y[i] = 1'b0;
+    end
 
     for (int i = 0; i < NEURONS_IN_THIS_LAYER; i++) begin
       for (int j = 0; j < MAX_NEURON_INPUTS / PW; j++) begin
-        result.popcount[i] +=
-            $countones(test_item.weights[i*(MAX_NEURON_INPUTS/PW)+j] ~^ test_item.layer_inputs[j]);
+        result.popcount[i] += $countones(
+            test_item.weights[i*(MAX_NEURON_INPUTS/PW)+j] ~^ test_item.layer_inputs[j]
+        );
+        //if (id == 0) begin
+        //$display("result.pop = %h; weight = %h; input = %h;", result.popcount[i],
+        //test_item.weights[i*(MAX_NEURON_INPUTS/PW)+j], test_item.layer_inputs[j]);
+        //end
       end
 
       // set popcount and y
       result.y[i] = result.popcount[i] >= test_item.thresholds[i];
     end
+
     return result;
   endfunction
 
@@ -119,7 +132,7 @@ module layer_tb #(
       else $fatal(1, "Failed to randomize.");
 
       driver_mailbox.put(test);
-      scoreboard_data_mailbox.put(model(test));
+      scoreboard_data_mailbox.put(model(test, i));
     end
   end
 
@@ -179,13 +192,11 @@ module layer_tb #(
       weight_valid <= 1'b0;
       @(posedge clk);
 
-      // send the entire input list NEURONS_IN_THIS_LAYER/PN times
-      for (int i = 0; i < NEURONS_IN_THIS_LAYER / PN; i++) begin
-        for (int j = 0; j < MAX_NEURON_INPUTS / PW; j++) begin
-          input_valid  <= 1'b1;
-          layer_inputs <= item.layer_inputs[j];
-          @(posedge clk);
-        end
+      // send the entire input list once
+      for (int i = 0; i < MAX_NEURON_INPUTS / PW; i++) begin
+        input_valid  <= 1'b1;
+        layer_inputs <= item.layer_inputs[i];
+        @(posedge clk);
       end
 
       input_valid <= 1'b0;

@@ -27,10 +27,6 @@ module layer #(
     output logic [THRESHOLD_WIDTH-1:0] popcounts[PN-1:0],
     output logic layer_valid_out
 );
-  assign ys = y;
-  assign popcounts = popcount;
-  assign layer_valid_out = valid_out[0];  // all neurons in a layer output at the same time
-
   /* --------------- ALL RAM NP SIGNALS      ---------------------*/
   // packed list of all the wram write ports
   logic                       wram_en_a     [PN-1:0];
@@ -51,9 +47,13 @@ module layer #(
   logic                       valid_in      [PN-1:0];
   logic                       last          [PN-1:0];
   logic                       valid_out     [PN-1:0];
-  logic                       y             [PN-1:0];
+  logic [             PN-1:0] y;
   logic [THRESHOLD_WIDTH-1:0] popcount      [PN-1:0];
   /* --------------- END ALL RAM NP SIGNALS      ---------------------*/
+
+  assign ys = y;
+  assign popcounts = popcount;
+  assign layer_valid_out = valid_out[0];  // all neurons in a layer output at the same time
 
   // create PN ram_neuron_processors
   for (genvar i = 0; i < PN; i++) begin : l_ram_neuron_processors
@@ -94,6 +94,7 @@ module layer #(
     // the default is that all the neurons are disabled
     for (int i = 0; i < PN; i++) begin
       valid_in[i] <= 1'b0;
+      last[i] <= 1'b0;
     end
 
     if (rst) begin
@@ -194,10 +195,10 @@ module layer #(
         tram_wr_data_a[t_current_np] <= threshold[THRESHOLD_WIDTH-1:0];
 
         // increment values as needed
-        current_tram_addr_a <= current_tram_addr_a + 1;
-        if (current_tram_addr_a == NEURONS_MAPPED_TO_ME - 1) begin
-          t_current_np <= t_current_np + 1;
-          current_tram_addr_a <= '0;
+        t_current_np <= t_current_np + 1;
+        if (t_current_np == PN - 1) begin
+          current_tram_addr_a <= current_tram_addr_a + 1;
+          t_current_np <= '0;
         end
       end
     end
@@ -206,8 +207,9 @@ module layer #(
   // take the config stream and write to wrams
   // TODO add something to ignore first weights if not first layer
   // TODO add something to ignore trailing weights if not in last layer
-  logic [  $clog2(PN)-1:0] w_current_np;  // max value is NP-1
+  logic [$clog2(PN)-1:0] w_current_np;  // max value is NP-1
   logic [W_ADDR_WIDTH-1:0] current_wram_addr_a;
+  logic [$clog2(MAX_NEURON_INPUTS/PW)-1:0] neuron_offset;
   always_ff @(posedge clk or posedge rst) begin : program_wram
     // the default is that all the tram ports are disabled
     for (int i = 0; i < PN; i++) begin
@@ -217,19 +219,24 @@ module layer #(
     if (rst) begin
       w_current_np <= '0;
       current_wram_addr_a <= '0;
+      neuron_offset <= '0;
     end else begin
       if (weight_valid) begin
         // write the threshold
         wram_en_a[w_current_np] <= 1'b1;
         wram_wr_en_a[w_current_np] <= 1'b1;  // TODO just hard code this to be 1
-        wram_addr_a[w_current_np] <= current_wram_addr_a;
+        wram_addr_a[w_current_np] <= current_wram_addr_a + neuron_offset;
         wram_wr_data_a[w_current_np] <= weight; // todo add some way to handle different sized weights
 
         // increment values as needed
-        current_wram_addr_a <= current_wram_addr_a + 1;
-        if (current_wram_addr_a == MAX_NEURON_INPUTS / PW * NEURONS_MAPPED_TO_ME - 1) begin
-          w_current_np <= w_current_np + 1;
-          current_wram_addr_a <= '0;
+        neuron_offset <= neuron_offset + 1;
+        if (neuron_offset == MAX_NEURON_INPUTS / PW - 1) begin
+          neuron_offset <= '0;
+          w_current_np  <= w_current_np + 1;
+          if (w_current_np == PN - 1) begin
+            current_wram_addr_a <= current_wram_addr_a + 1;
+            w_current_np <= '0;
+          end
         end
       end
     end
