@@ -10,7 +10,7 @@ module layer_tb #(
   localparam int PW = 8;
   localparam int PN = 5;
   localparam int NEURONS_IN_THIS_LAYER = 10;
-  localparam int SETS_OF_INPUTS = 2;
+  localparam int SETS_OF_INPUTS = 5;
 
   localparam int NEURONS_MAPPED_TO_ME = NEURONS_IN_THIS_LAYER / PN;
 

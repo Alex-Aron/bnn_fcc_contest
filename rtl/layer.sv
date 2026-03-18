@@ -8,7 +8,7 @@ module layer #(
     parameter int PW = 8,  // weights inputs that can be processed in one pass
     parameter int PN = 5,
     parameter int NEURONS_IN_THIS_LAYER = 10,
-    parameter int FIFO_SAFTEY_FACTOR = 4,
+    parameter int FIFO_SAFTEY_FACTOR = 5,
 
     localparam int THRESHOLD_WIDTH = $clog2(MAX_NEURON_INPUTS + 1),
 
@@ -104,7 +104,9 @@ module layer #(
   // create the fifo that will feed the input buffer shift register thingy
   fifo #(
       .WIDTH(PW),
-      .DEPTH(FIFO_SAFTEY_FACTOR * MAX_NEURON_INPUTS / PW)
+      .DEPTH(1 << $clog2(
+          FIFO_SAFTEY_FACTOR * MAX_NEURON_INPUTS / PW
+      ))  // according to chat-gpt, depth must be a power of 2
   ) alexander_aron_is_my_guily_pleasure (
       .clk(clk),
       .rst(rst),
