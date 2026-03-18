@@ -135,7 +135,7 @@ module layer_tb #(
       else $fatal(1, "Failed to randomize.");
 
       driver_mailbox.put(test);
-      scoreboard_data_mailbox.put(model(test, i));
+      scoreboard_data_mailbox.put(test);
     end
   end
 
@@ -219,6 +219,7 @@ module layer_tb #(
 
   initial begin : scoreboard
     neuron_result_t expected, actual;
+    neuron_processor_item item;
 
     passed = 0;
     failed = 0;
@@ -226,7 +227,27 @@ module layer_tb #(
     for (int i = 0; i < NUM_TESTS; i++) begin
       // this has popcounts and ys from all neruons in the layer for each set
       // of inputs
-      scoreboard_data_mailbox.get(expected);
+      scoreboard_data_mailbox.get(item);
+      expected = model(item, 0);
+
+
+      $display("========= Start Test %0d =========", i);
+      for (int j = 0; j < NEURONS_IN_THIS_LAYER; j++) begin
+        $write("Neuron %0d: ", j);
+        for (int k = 0; k < MAX_NEURON_INPUTS / PW; k++) begin
+          $write("%0h ", item.weights[j*(MAX_NEURON_INPUTS/PW)+k]);
+        end
+        $write("; y=%0d\n", item.thresholds[j]);
+      end
+      $write("\n");
+      for (int j = 0; j < SETS_OF_INPUTS; j++) begin
+        $write("Input %0d: ", j);
+        for (int k = 0; k < MAX_NEURON_INPUTS / PW; k++) begin
+          $write("%0h ", item.layer_inputs[j*(MAX_NEURON_INPUTS/PW)+k]);
+        end
+        $write(";\n");
+      end
+      $write("\n");
 
       for (int j = 0; j < SETS_OF_INPUTS * NEURONS_IN_THIS_LAYER / PN; j++) begin
         // this has popcounts and ys from PN neruons in the layer
