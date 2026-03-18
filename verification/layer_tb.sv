@@ -80,7 +80,7 @@ module layer_tb #(
     //if (id == 0) begin
     //$display("---------------");
     //end
-    for (int i = 0; i < NEURONS_IN_THIS_LAYER; i++) begin
+    for (int i = 0; i < SETS_OF_INPUTS * NEURONS_IN_THIS_LAYER; i++) begin
       result.popcount[i] = 0;
       result.y[i] = 1'b0;
     end
@@ -89,7 +89,7 @@ module layer_tb #(
       for (int i = 0; i < NEURONS_IN_THIS_LAYER; i++) begin
         for (int j = 0; j < MAX_NEURON_INPUTS / PW; j++) begin
           result.popcount[NEURONS_IN_THIS_LAYER*k+i] += $countones(
-              test_item.weights[i*(MAX_NEURON_INPUTS/PW)+j] ~^ test_item.layer_inputs[NEURONS_IN_THIS_LAYER*k+j]
+              test_item.weights[i*(MAX_NEURON_INPUTS/PW)+j] ~^ test_item.layer_inputs[(MAX_NEURON_INPUTS/PW)*k+j]
           );
           //if (id == 0) begin
           //$display("result.pop = %h; weight = %h; input = %h;", result.popcount[i],
@@ -98,7 +98,7 @@ module layer_tb #(
         end
 
         // set popcount and y
-        result.y[NEURONS_IN_THIS_LAYER*k+i] = result.popcount[NEURONS_IN_THIS_LAYER*k+i] >= test_item.thresholds[NEURONS_IN_THIS_LAYER*k+i];
+        result.y[NEURONS_IN_THIS_LAYER*k+i] = result.popcount[NEURONS_IN_THIS_LAYER*k+i] >= test_item.thresholds[i];
       end
     end
 
