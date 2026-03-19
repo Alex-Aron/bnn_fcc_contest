@@ -15,10 +15,10 @@ module config_manager #(
     output logic                   config_ready,
 
     // info for the layers
-    output logic [PARALLEL_INPUTS-1:0] weight_wr_data,
-    output logic [         LAYERS-1:0] weight_wr_en,
-    output logic [               31:0] threshold_wr_data,
-    output logic [         LAYERS-1:0] threshold_wr_en
+    output logic [8-1:0] weight_wr_data, // hardcoded to 8 becuase each layer handles width fixing rn
+    output logic [LAYERS-1:0] weight_wr_en,
+    output logic [31:0] threshold_wr_data,
+    output logic [LAYERS-1:0] threshold_wr_en
 );
 
   /*
@@ -67,6 +67,7 @@ Just ideas, I am going to work on this I just want to push after making the two 
     else state <= next_state;
 
 
+  // parsing the header
   always_ff @(posedge clk or posedge rst) begin : state_out
     if (rst) begin
       header <= '0;
@@ -90,16 +91,77 @@ Just ideas, I am going to work on this I just want to push after making the two 
     end
   end
 
+  // this is defined here because I'm lazy but is (mainly )used in this block: `process_weights_register_the_weights`
+  logic [$clog2(BUS_WIDTH/8):0] weights_to_send;
+
   always_comb begin : next_state_logic
     next_state = state;
     case (state)
-      HEADER_PARSE1:   if (config_valid) next_state = HEADER_PARSE2;
+      HEADER_PARSE1: if (config_valid) next_state = HEADER_PARSE2;
       HEADER_PARSE2: begin
         if (config_valid) next_state = header.msg_type[0] ? PROCESS_THRESHOLDS : PROCESS_WEIGHTS;
       end
       PROCESS_WEIGHTS: next_state = config_last ? FINISH_LAYER : PROCESS_WEIGHTS;
+      PROCESS_THRESHOLDS: next_state = config_last ? HEADER_PARSE1 : PROCESS_THRESHOLDS;
+      FINISH_LAYER: next_state = weights_to_send == '0 ? HEADER_PARSE1 : PROCESS_WEIGHTS;
     endcase
 
   end
 
+  // for when we are in PROCESS_THRESHOLDS
+  always_comb begin : process_threshold_output_logic
+    // defaults:
+    threshold_wr_data = config_data_in[31:0];
+    threshold_wr_en   = '0;
+
+    // write enable
+    if (state == PROCESS_THRESHOLDS && config_valid) begin
+      threshold_wr_en[header.layer.id] = 1'b1;
+    end
+  end
+
+
+  // sequentil for when we are in PROCESS_WEIGHTS
+  logic [8-1:0] weights[BUS_WIDTH/8-1:0]; // since layers assume we send bytes no matter what PW is rn
+  always_ff @(posedge clk or posedge rst) begin : process_weights_register_the_weights
+    if (rst) begin
+      weights_to_send <= '0;
+    end else if (state == PROCESS_WEIGHTS && config_valid) begin
+      // register inputs and set counter
+      for (int i = 0; i < BUS_WIDTH / 8; i++) begin
+        weights[i] <= config_data_in[i*8+:8];
+      end
+
+      weights_to_send <= (1 << $clog2(BUS_WIDTH / 8));
+    end else if (weights_to_send != 0) begin
+      weights_to_send <= weights_to_send - 1;
+      for (int i = 0; i < BUS_WIDTH / 8 - 1; i++) begin
+        weights[i] <= weights[i+1];
+      end
+    end
+  end
+
+  // comb for when we are in PROCESS_WEIGHTS
+  always_comb begin : process_weights_output_logic
+    // defaults
+    weight_wr_data = weights[0];
+    weight_wr_en   = '0;
+
+    if (weights_to_send != 0) begin
+      threshold_wr_en[header.layer.id] = 1'b1;
+    end
+  end
+
+  // when to apply back pressure
+  always_comb begin : config_ready_logic
+    config_ready = 1'b1;
+
+    // only apply back pressure when in PROCESS_WEIGHTS state and sending
+    // weights
+    if (state == PROCESS_WEIGHTS) begin
+      if (config_valid || weights_to_send != '0) begin
+        config_ready = 1'b0;
+      end
+    end
+  end
 endmodule : config_manager
