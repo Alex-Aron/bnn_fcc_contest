@@ -1,5 +1,4 @@
 // TODO's
-// somehow ignore certain w and t
 // support PW!=8 how
 
 module layer #(

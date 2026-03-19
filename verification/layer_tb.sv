@@ -1,3 +1,6 @@
+// todo test en
+// todo test ready
+
 module layer_tb #(
     parameter int NUM_TESTS = 1000,
     parameter int MIN_CYCLES_BETWEEN_TESTS = 1,
