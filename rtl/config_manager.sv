@@ -148,7 +148,7 @@ Just ideas, I am going to work on this I just want to push after making the two 
     weight_wr_en   = '0;
 
     if (weights_to_send != 0) begin
-      threshold_wr_en[header.layer.id] = 1'b1;
+      weight_wr_en[header.layer.id] = 1'b1;
     end
   end
 
