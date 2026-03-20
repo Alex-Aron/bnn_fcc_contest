@@ -84,10 +84,10 @@
 
 module bnn_fcc_tb #(
     // Testbench configuration
-    parameter int      USE_CUSTOM_TOPOLOGY                      = 1'b0,
+    parameter int      USE_CUSTOM_TOPOLOGY                      = 1'b1,
     parameter int      CUSTOM_LAYERS                            = 4,
     parameter int      CUSTOM_TOPOLOGY          [CUSTOM_LAYERS] = '{8, 8, 8, 8},
-    parameter int      NUM_TEST_IMAGES                          = 50,
+    parameter int      NUM_TEST_IMAGES                          = 1,
     parameter bit      VERIFY_MODEL                             = 1,
     parameter string   BASE_DIR                                 = "../python",
     parameter bit      TOGGLE_DATA_OUT_READY                    = 1'b1,
@@ -95,7 +95,7 @@ module bnn_fcc_tb #(
     parameter real     DATA_IN_VALID_PROBABILITY                = 0.8,
     parameter realtime TIMEOUT                                  = 10ms,
     parameter realtime CLK_PERIOD                               = 10ns,
-    parameter bit      DEBUG                                    = 1'b0,
+    parameter bit      DEBUG                                    = 1'b1,
 
     // Bus configuration
     parameter int CONFIG_BUS_WIDTH = 64,
@@ -115,352 +115,363 @@ module bnn_fcc_tb #(
     // DUT configuration (can be modified or extended for your own DUT)        
     localparam int NON_INPUT_LAYERS = USE_CUSTOM_TOPOLOGY ? CUSTOM_LAYERS - 1 : TRAINED_LAYERS - 1,
     parameter int PARALLEL_INPUTS = 8,
-    parameter int PARALLEL_NEURONS[NON_INPUT_LAYERS] = '{8, 8, 10}
+    parameter int PARALLEL_NEURONS[NON_INPUT_LAYERS] = '{8, 8, 8}
 );
-    import bnn_fcc_tb_pkg::*;
+  import bnn_fcc_tb_pkg::*;
 
-    localparam int ACTUAL_TOTAL_LAYERS = USE_CUSTOM_TOPOLOGY ? CUSTOM_LAYERS : TRAINED_LAYERS;
-    localparam int ACTUAL_TOPOLOGY[ACTUAL_TOTAL_LAYERS] = USE_CUSTOM_TOPOLOGY ? CUSTOM_TOPOLOGY : TRAINED_TOPOLOGY;
+  localparam int ACTUAL_TOTAL_LAYERS = USE_CUSTOM_TOPOLOGY ? CUSTOM_LAYERS : TRAINED_LAYERS;
+  localparam int ACTUAL_TOPOLOGY[ACTUAL_TOTAL_LAYERS] = USE_CUSTOM_TOPOLOGY ? CUSTOM_TOPOLOGY : TRAINED_TOPOLOGY;
 
-    localparam string MNIST_TEST_VECTOR_INPUT_PATH = "test_vectors/inputs.hex";
-    localparam string MNIST_TEST_VECTOR_OUTPUT_PATH = "test_vectors/expected_outputs.txt";
-    localparam string MNIST_MODEL_DATA_PATH = "model_data";
+  localparam string MNIST_TEST_VECTOR_INPUT_PATH = "test_vectors/inputs.hex";
+  localparam string MNIST_TEST_VECTOR_OUTPUT_PATH = "test_vectors/expected_outputs.txt";
+  localparam string MNIST_MODEL_DATA_PATH = "model_data";
 
-    localparam realtime HALF_CLK_PERIOD = CLK_PERIOD / 2.0;
+  localparam realtime HALF_CLK_PERIOD = CLK_PERIOD / 2.0;
 
-    initial begin
-        assert (INPUT_DATA_WIDTH == 8)
-        else $fatal(1, "TB ERROR: INPUT_DATA_WIDTH must be 8. Sub-byte or multi-byte packing logic not yet implemented.");
-    end
+  initial begin
+    assert (INPUT_DATA_WIDTH == 8)
+    else
+      $fatal(
+          1,
+          "TB ERROR: INPUT_DATA_WIDTH must be 8. Sub-byte or multi-byte packing logic not yet implemented."
+      );
+  end
 
-    // Returns 1 with probability p, 0 with probability 1-p.
-    function automatic bit chance(real p);
-        if (p > 1.0 || p < 0.0) $fatal(1, "Invalid probability in chance()");
-        return ($urandom < (p * (2.0 ** 32)));
-    endfunction
+  // Returns 1 with probability p, 0 with probability 1-p.
+  function automatic bit chance(real p);
+    if (p > 1.0 || p < 0.0) $fatal(1, "Invalid probability in chance()");
+    return ($urandom < (p * (2.0 ** 32)));
+  endfunction
 
-    BNN_FCC_Model #(CONFIG_BUS_WIDTH) model;
-    BNN_FCC_Stimulus #(INPUT_DATA_WIDTH) stim;
-    LatencyTracker latency;
-    ThroughputTracker throughput;
+  BNN_FCC_Model #(CONFIG_BUS_WIDTH) model;
+  BNN_FCC_Stimulus #(INPUT_DATA_WIDTH) stim;
+  LatencyTracker latency;
+  ThroughputTracker throughput;
 
-    typedef bit [CONFIG_BUS_WIDTH-1:0] config_bus_word_t;
-    typedef config_bus_word_t config_bus_data_stream_t[];
+  typedef bit [CONFIG_BUS_WIDTH-1:0] config_bus_word_t;
+  typedef config_bus_word_t config_bus_data_stream_t[];
 
-    localparam CONFIG_KEEP_WIDTH = CONFIG_BUS_WIDTH / 8;
-    typedef bit [CONFIG_KEEP_WIDTH-1:0] config_bus_keep_t;
-    typedef config_bus_keep_t config_keep_stream_t[];
+  localparam CONFIG_KEEP_WIDTH = CONFIG_BUS_WIDTH / 8;
+  typedef bit [CONFIG_KEEP_WIDTH-1:0] config_bus_keep_t;
+  typedef config_bus_keep_t config_keep_stream_t[];
 
-    bit [CONFIG_BUS_WIDTH-1:0] config_bus_data_stream[];
-    bit [CONFIG_BUS_WIDTH/8-1:0] config_bus_keep_stream[];
+  bit [CONFIG_BUS_WIDTH-1:0] config_bus_data_stream[];
+  bit [CONFIG_BUS_WIDTH/8-1:0] config_bus_keep_stream[];
 
-    int num_tests;
-    int passed;
-    int failed;
+  int num_tests;
+  int passed;
+  int failed;
 
-    logic clk = 1'b0;
-    logic rst;
+  logic clk = 1'b0;
+  logic rst;
 
-    axi4_stream_if #(
-        .DATA_WIDTH(CONFIG_BUS_WIDTH)
-    ) config_in (
-        .aclk   (clk),
-        .aresetn(!rst)
-    );
+  axi4_stream_if #(
+      .DATA_WIDTH(CONFIG_BUS_WIDTH)
+  ) config_in (
+      .aclk   (clk),
+      .aresetn(!rst)
+  );
 
-    axi4_stream_if #(
-        .DATA_WIDTH(INPUT_BUS_WIDTH)
-    ) data_in (
-        .aclk   (clk),
-        .aresetn(!rst)
-    );
+  axi4_stream_if #(
+      .DATA_WIDTH(INPUT_BUS_WIDTH)
+  ) data_in (
+      .aclk   (clk),
+      .aresetn(!rst)
+  );
 
-    axi4_stream_if #(
-        .DATA_WIDTH(OUTPUT_BUS_WIDTH)
-    ) data_out (
-        .aclk   (clk),
-        .aresetn(!rst)
-    );
+  axi4_stream_if #(
+      .DATA_WIDTH(OUTPUT_BUS_WIDTH)
+  ) data_out (
+      .aclk   (clk),
+      .aresetn(!rst)
+  );
 
-    bnn_fcc #(
-        .INPUT_DATA_WIDTH (INPUT_DATA_WIDTH),
-        .INPUT_BUS_WIDTH  (INPUT_BUS_WIDTH),
-        .CONFIG_BUS_WIDTH (CONFIG_BUS_WIDTH),
-        .OUTPUT_DATA_WIDTH(OUTPUT_DATA_WIDTH),
-        .OUTPUT_BUS_WIDTH (OUTPUT_BUS_WIDTH),
-        .TOTAL_LAYERS     (ACTUAL_TOTAL_LAYERS),
-        .TOPOLOGY         (ACTUAL_TOPOLOGY),
-        .PARALLEL_INPUTS  (PARALLEL_INPUTS),
-        .PARALLEL_NEURONS (PARALLEL_NEURONS)
-    ) DUT (
-        .clk(clk),
-        .rst(rst),
+  bnn_fcc #(
+      .INPUT_DATA_WIDTH (INPUT_DATA_WIDTH),
+      .INPUT_BUS_WIDTH  (INPUT_BUS_WIDTH),
+      .CONFIG_BUS_WIDTH (CONFIG_BUS_WIDTH),
+      .OUTPUT_DATA_WIDTH(OUTPUT_DATA_WIDTH),
+      .OUTPUT_BUS_WIDTH (OUTPUT_BUS_WIDTH),
+      .TOTAL_LAYERS     (ACTUAL_TOTAL_LAYERS),
+      .TOPOLOGY         (ACTUAL_TOPOLOGY),
+      .PARALLEL_INPUTS  (PARALLEL_INPUTS),
+      .PARALLEL_NEURONS (PARALLEL_NEURONS)
+  ) DUT (
+      .clk(clk),
+      .rst(rst),
 
-        .config_valid(config_in.tvalid),
-        .config_ready(config_in.tready),
-        .config_data (config_in.tdata),
-        .config_keep (config_in.tkeep),
-        .config_last (config_in.tlast),
+      .config_valid(config_in.tvalid),
+      .config_ready(config_in.tready),
+      .config_data (config_in.tdata),
+      .config_keep (config_in.tkeep),
+      .config_last (config_in.tlast),
 
-        .data_in_valid(data_in.tvalid),
-        .data_in_ready(data_in.tready),
-        .data_in_data (data_in.tdata),
-        .data_in_keep (data_in.tkeep),
-        .data_in_last (data_in.tlast),
+      .data_in_valid(data_in.tvalid),
+      .data_in_ready(data_in.tready),
+      .data_in_data (data_in.tdata),
+      .data_in_keep (data_in.tkeep),
+      .data_in_last (data_in.tlast),
 
-        .data_out_valid(data_out.tvalid),
-        .data_out_ready(data_out.tready),
-        .data_out_data (data_out.tdata),
-        .data_out_keep (data_out.tkeep),
-        .data_out_last (data_out.tlast)
-    );
+      .data_out_valid(data_out.tvalid),
+      .data_out_ready(data_out.tready),
+      .data_out_data (data_out.tdata),
+      .data_out_keep (data_out.tkeep),
+      .data_out_last (data_out.tlast)
+  );
 
-    initial begin : generate_clock
-        forever #HALF_CLK_PERIOD clk <= ~clk;
-    end
+  initial begin : generate_clock
+    forever #HALF_CLK_PERIOD clk <= ~clk;
+  end
 
-    task verify_model();
-        int python_preds[];
-        bit [INPUT_DATA_WIDTH-1:0] current_img[];
-        string input_path;
-        string output_path;
-        input_path  = $sformatf("%s/%s", BASE_DIR, MNIST_TEST_VECTOR_INPUT_PATH);
-        output_path = $sformatf("%s/%s", BASE_DIR, MNIST_TEST_VECTOR_OUTPUT_PATH);
+  task verify_model();
+    int python_preds[];
+    bit [INPUT_DATA_WIDTH-1:0] current_img[];
+    string input_path;
+    string output_path;
+    input_path  = $sformatf("%s/%s", BASE_DIR, MNIST_TEST_VECTOR_INPUT_PATH);
+    output_path = $sformatf("%s/%s", BASE_DIR, MNIST_TEST_VECTOR_OUTPUT_PATH);
 
-        // Load stimulus images
-        stim.load_from_file(input_path);
-        num_tests = stim.get_num_vectors();
+    // Load stimulus images
+    stim.load_from_file(input_path);
+    num_tests = stim.get_num_vectors();
 
-        // Load Python predictions (i.e. truth)
-        python_preds = new[num_tests];
-        $readmemh(output_path, python_preds);
+    // Load Python predictions (i.e. truth)
+    python_preds = new[num_tests];
+    $readmemh(output_path, python_preds);
 
-        for (int i = 0; i < num_tests; i++) begin
-            int sv_pred;
-            stim.get_vector(i, current_img);
-            sv_pred = model.compute_reference(current_img);  // SV calculates result            
+    for (int i = 0; i < num_tests; i++) begin
+      int sv_pred;
+      stim.get_vector(i, current_img);
+      sv_pred = model.compute_reference(current_img);  // SV calculates result            
 
-            // Self-check the SV model.
-            if (sv_pred !== python_preds[i]) begin
-                $error("TB LOGIC ERROR: Img %0d. SV Model says %0d, Python says %0d", i, sv_pred, python_preds[i]);
-                $finish;  // Stop immediately, the testbench is broken
-                /*end else begin
+      // Self-check the SV model.
+      if (sv_pred !== python_preds[i]) begin
+        $error("TB LOGIC ERROR: Img %0d. SV Model says %0d, Python says %0d", i, sv_pred,
+               python_preds[i]);
+        $finish;  // Stop immediately, the testbench is broken
+        /*end else begin
                 $display("Img %0d: Class %0d (Matched Python)", i, sv_pred);*/
-            end
-        end
-
-        $display("SV model successfully verified.");
-    endtask
-
-    // ===========================================================================
-    // Initialize model and config memory
-    // ===========================================================================
-    initial begin : l_init_model
-        string path;
-        model = new();
-        stim = new(ACTUAL_TOPOLOGY[0]);
-        latency = new(CLK_PERIOD);
-        throughput = new(CLK_PERIOD);
-
-        if (!USE_CUSTOM_TOPOLOGY) begin
-            // Load Weights & Configure Memory
-            $display("--- Loading Trained Model ---");
-            path = $sformatf("%s/%s", BASE_DIR, MNIST_MODEL_DATA_PATH);
-            model.load_from_file(path, ACTUAL_TOPOLOGY);
-            if (VERIFY_MODEL) verify_model();
-            model.encode_configuration(config_bus_data_stream, config_bus_keep_stream);
-            $display("--- Configuration created: %0d words (%0d-bit wide) ---", config_bus_data_stream.size(), CONFIG_BUS_WIDTH);
-
-            // Load input images
-            $display("--- Loading Test Vectors ---");
-            path = $sformatf("%s/%s", BASE_DIR, MNIST_TEST_VECTOR_INPUT_PATH);
-            stim.load_from_file(path, NUM_TEST_IMAGES);
-        end else begin
-            $display("--- Loading Randomized Model ---");
-            model.create_random(ACTUAL_TOPOLOGY);
-            model.encode_configuration(config_bus_data_stream, config_bus_keep_stream);
-            $display("--- Configuration created: %0d words (%0d-bit wide) ---", config_bus_data_stream.size(), CONFIG_BUS_WIDTH);
-
-            $display("--- Generating Random Test Vectors ---");
-            stim.generate_random_vectors(NUM_TEST_IMAGES);
-        end
-
-        num_tests = stim.get_num_vectors();
-        model.print_summary();
-
-        if (DEBUG) model.print_model();
-
-        // NOTE: You can also debug by looking at the model's weights, thresholds, and layer ouputs. 
-        // For example, this prints the model for all neurons in the first hidden layer:
-        // for (int i = 0; i < ACTUAL_TOPOLOGY[1]; i++) model.print_neuron(0, i);      
-        //
-        // where the parameters specify the layer and neuron. This loop iterates over all
-        // neurons in the first hidden layer. Note that the parameters treat the first hidden layer
-        // as layer 0, essentially excluding the input layer since it has no neurons.
-        //
-        // Weights are accessible via model.weight[][][], where the dimensions are:
-        // [layer][neuron][bit]
-        //
-        // thresholds are accessible via model.threshold[][], where the dimensions are:
-        // [layer][neuron]
+      end
     end
 
-    logic [OUTPUT_DATA_WIDTH-1:0] expected_outputs[$];
+    $display("SV model successfully verified.");
+  endtask
 
-    assign config_in.tstrb = config_in.tkeep;
-    assign data_in.tstrb   = data_in.tkeep;
+  // ===========================================================================
+  // Initialize model and config memory
+  // ===========================================================================
+  initial begin : l_init_model
+    string path;
+    model = new();
+    stim = new(ACTUAL_TOPOLOGY[0]);
+    latency = new(CLK_PERIOD);
+    throughput = new(CLK_PERIOD);
 
-    initial begin : l_sequencer_and_driver
-        $timeformat(-9, 0, " ns", 0);
+    if (!USE_CUSTOM_TOPOLOGY) begin
+      // Load Weights & Configure Memory
+      $display("--- Loading Trained Model ---");
+      path = $sformatf("%s/%s", BASE_DIR, MNIST_MODEL_DATA_PATH);
+      model.load_from_file(path, ACTUAL_TOPOLOGY);
+      if (VERIFY_MODEL) verify_model();
+      model.encode_configuration(config_bus_data_stream, config_bus_keep_stream);
+      $display("--- Configuration created: %0d words (%0d-bit wide) ---",
+               config_bus_data_stream.size(), CONFIG_BUS_WIDTH);
 
-        rst              <= 1'b1;
+      // Load input images
+      $display("--- Loading Test Vectors ---");
+      path = $sformatf("%s/%s", BASE_DIR, MNIST_TEST_VECTOR_INPUT_PATH);
+      stim.load_from_file(path, NUM_TEST_IMAGES);
+    end else begin
+      $display("--- Loading Randomized Model ---");
+      model.create_random(ACTUAL_TOPOLOGY);
+      model.encode_configuration(config_bus_data_stream, config_bus_keep_stream);
+      $display("--- Configuration created: %0d words (%0d-bit wide) ---",
+               config_bus_data_stream.size(), CONFIG_BUS_WIDTH);
+
+      $display("--- Generating Random Test Vectors ---");
+      stim.generate_random_vectors(NUM_TEST_IMAGES);
+    end
+
+    num_tests = stim.get_num_vectors();
+    model.print_summary();
+
+    if (DEBUG) model.print_model();
+
+    // NOTE: You can also debug by looking at the model's weights, thresholds, and layer ouputs. 
+    // For example, this prints the model for all neurons in the first hidden layer:
+    // for (int i = 0; i < ACTUAL_TOPOLOGY[1]; i++) model.print_neuron(0, i);      
+    //
+    // where the parameters specify the layer and neuron. This loop iterates over all
+    // neurons in the first hidden layer. Note that the parameters treat the first hidden layer
+    // as layer 0, essentially excluding the input layer since it has no neurons.
+    //
+    // Weights are accessible via model.weight[][][], where the dimensions are:
+    // [layer][neuron][bit]
+    //
+    // thresholds are accessible via model.threshold[][], where the dimensions are:
+    // [layer][neuron]
+  end
+
+  logic [OUTPUT_DATA_WIDTH-1:0] expected_outputs[$];
+
+  assign config_in.tstrb = config_in.tkeep;
+  assign data_in.tstrb   = data_in.tkeep;
+
+  initial begin : l_sequencer_and_driver
+    $timeformat(-9, 0, " ns", 0);
+
+    rst              <= 1'b1;
+    config_in.tvalid <= 1'b0;
+    config_in.tdata  <= '0;
+    config_in.tkeep  <= '0;
+    config_in.tlast  <= 1'b0;
+    config_in.tuser  <= '0;
+    config_in.tid    <= '0;
+    config_in.tdest  <= '0;
+    data_in.tvalid   <= 1'b0;
+    data_in.tdata    <= '0;
+    data_in.tkeep    <= '0;
+    data_in.tlast    <= 1'b0;
+    data_in.tuser    <= '0;
+    data_in.tid      <= '0;
+    data_in.tdest    <= '0;
+
+    repeat (5) @(posedge clk);
+    @(negedge clk);
+    rst <= 1'b0;
+    repeat (5) @(posedge clk);
+
+    // Stream in weights and thresholds.
+    $display("[%0t] Streaming weights and thresholds.", $realtime);
+    for (int i = 0; i < config_bus_data_stream.size(); i++) begin
+
+      // Simulate gaps on configuration bus.
+      while (!chance(
+          CONFIG_VALID_PROBABILITY
+      )) begin
         config_in.tvalid <= 1'b0;
-        config_in.tdata  <= '0;
-        config_in.tkeep  <= '0;
-        config_in.tlast  <= 1'b0;
-        config_in.tuser  <= '0;
-        config_in.tid    <= '0;
-        config_in.tdest  <= '0;
-        data_in.tvalid   <= 1'b0;
-        data_in.tdata    <= '0;
-        data_in.tkeep    <= '0;
-        data_in.tlast    <= 1'b0;
-        data_in.tuser    <= '0;
-        data_in.tid      <= '0;
-        data_in.tdest    <= '0;
+        @(posedge clk iff config_in.tready);
+      end
 
-        repeat (5) @(posedge clk);
-        @(negedge clk);
-        rst <= 1'b0;
-        repeat (5) @(posedge clk);
+      config_in.tvalid <= 1'b1;
+      config_in.tdata  <= config_bus_data_stream[i];
+      config_in.tlast  <= i == config_bus_data_stream.size() - 1;
+      config_in.tkeep  <= config_bus_keep_stream[i];
+      @(posedge clk iff config_in.tready);
+    end
+    config_in.tvalid <= 1'b0;
+    config_in.tlast  <= 1'b0;
 
-        // Stream in weights and thresholds.
-        $display("[%0t] Streaming weights and thresholds.", $realtime);
-        for (int i = 0; i < config_bus_data_stream.size(); i++) begin
+    wait (data_in.tready);
+    repeat (5) @(posedge clk);
 
-            // Simulate gaps on configuration bus.
-            while (!chance(
-                CONFIG_VALID_PROBABILITY
-            )) begin
-                config_in.tvalid <= 1'b0;
-                @(posedge clk iff config_in.tready);
-            end
+    for (int i = 0; i < num_tests; i++) begin
+      int expected_pred;
+      bit expected_bit;
+      bit [INPUT_DATA_WIDTH-1:0] current_img[];
 
-            config_in.tvalid <= 1'b1;
-            config_in.tdata  <= config_bus_data_stream[i];
-            config_in.tlast  <= i == config_bus_data_stream.size() - 1;
-            config_in.tkeep  <= config_bus_keep_stream[i];
-            @(posedge clk iff config_in.tready);
-        end
-        config_in.tvalid <= 1'b0;
-        config_in.tlast  <= 1'b0;
+      // Fetch stimulus image i (pre-created by either stim.load_from_file() or stim.generate_random_vectors())
+      stim.get_vector(i, current_img);
 
-        wait (data_in.tready);
-        repeat (5) @(posedge clk);
+      // Compute expected output for current image. This also generates references for each layer's
+      // outputs, which can be accessed via model.layer_outputs[layer][neuron] for deeper verification.
+      expected_pred = model.compute_reference(current_img);
+      expected_outputs.push_back(expected_pred);
 
-        for (int i = 0; i < num_tests; i++) begin
-            int expected_pred;
-            bit expected_bit;
-            bit [INPUT_DATA_WIDTH-1:0] current_img[];
+      // Stream image into DUT.
+      $display("[%0t] Streaming image %0d.", $realtime, i);
+      if (DEBUG) model.print_inference_trace();
 
-            // Fetch stimulus image i (pre-created by either stim.load_from_file() or stim.generate_random_vectors())
-            stim.get_vector(i, current_img);
+      for (int j = 0; j < current_img.size(); j += INPUTS_PER_CYCLE) begin
 
-            // Compute expected output for current image. This also generates references for each layer's
-            // outputs, which can be accessed via model.layer_outputs[layer][neuron] for deeper verification.
-            expected_pred = model.compute_reference(current_img);
-            expected_outputs.push_back(expected_pred);
-
-            // Stream image into DUT.
-            $display("[%0t] Streaming image %0d.", $realtime, i);
-            if (DEBUG) model.print_inference_trace();
-
-            for (int j = 0; j < current_img.size(); j += INPUTS_PER_CYCLE) begin
-
-                // Pack multiple pixels into a single AXI beat.
-                for (int k = 0; k < INPUTS_PER_CYCLE; k++) begin
-                    if (j + k < current_img.size()) begin
-                        data_in.tdata[k*INPUT_DATA_WIDTH+:INPUT_DATA_WIDTH] <= current_img[j+k];
-                        data_in.tkeep[k*BYTES_PER_INPUT+:BYTES_PER_INPUT]   <= '1;
-                    end else begin
-                        data_in.tdata[k*INPUT_DATA_WIDTH+:INPUT_DATA_WIDTH] <= '0;
-                        data_in.tkeep[k*BYTES_PER_INPUT+:BYTES_PER_INPUT]   <= '0;
-                    end
-                end
-
-                // Simulate gaps on data_in bus.
-                while (!chance(
-                    DATA_IN_VALID_PROBABILITY
-                )) begin
-                    data_in.tvalid <= 1'b0;
-                    @(posedge clk iff data_in.tready);
-                end
-                data_in.tvalid <= 1'b1;
-                data_in.tlast  <= (j + INPUTS_PER_CYCLE >= current_img.size());
-                @(posedge clk iff data_in.tready);
-
-                // Start the throughput timer after the first beat of the first image has been accepted.                
-                if (i == 0 && j == 0) throughput.start_test();
-
-                // Start the latency timer after the first beat of each image has been accepted.                
-                if (j == 0) latency.start_event(i);
-            end
-
-            data_in.tvalid <= 1'b0;
-            data_in.tlast  <= 1'b0;
-            data_in.tkeep  <= '0;
-            @(posedge clk);
+        // Pack multiple pixels into a single AXI beat.
+        for (int k = 0; k < INPUTS_PER_CYCLE; k++) begin
+          if (j + k < current_img.size()) begin
+            data_in.tdata[k*INPUT_DATA_WIDTH+:INPUT_DATA_WIDTH] <= current_img[j+k];
+            data_in.tkeep[k*BYTES_PER_INPUT+:BYTES_PER_INPUT]   <= '1;
+          end else begin
+            data_in.tdata[k*INPUT_DATA_WIDTH+:INPUT_DATA_WIDTH] <= '0;
+            data_in.tkeep[k*BYTES_PER_INPUT+:BYTES_PER_INPUT]   <= '0;
+          end
         end
 
-        $display("[%0t] All images loaded, waiting for outputs.", $realtime);
-        wait (expected_outputs.size() == 0);
-        repeat (5) @(posedge clk);
-
-        disable generate_clock;
-        disable l_timeout;
-        if (passed == num_tests) $display("[%0t] SUCCESS: all %0d tests completed successfully.", $realtime, num_tests);
-        else $error("FAILED: %0d out of %0d tests failed.", failed, num_tests);
-
-        $display("\nStats:");
-        $display("Avg latency (cycles) per image: %0.1f cycles", latency.get_avg_cycles());
-        $display("Avg latency (time) per image: %0.1f ns", latency.get_avg_time());
-        $display("Avg throughput (outputs/sec): %0.1f", throughput.get_outputs_per_sec(NUM_TEST_IMAGES));
-        $display("Avg throughput (cycles/output): %0.1f", throughput.get_avg_cycles_per_output(NUM_TEST_IMAGES));
-    end
-
-    initial begin : l_toggle_ready
-        data_out.tready <= 1'b1;
-        @(posedge clk iff !rst);
-        if (TOGGLE_DATA_OUT_READY) begin
-            forever begin
-                data_out.tready <= $urandom();
-                @(posedge clk);
-            end
-        end else data_out.tready <= 1'b1;
-    end
-
-    initial begin : l_output_monitor
-        automatic int output_count = 0;
-        forever begin
-            @(posedge clk iff data_out.tvalid && data_out.tready);
-            assert (expected_outputs.size() > 0)
-            else $fatal(1, "No expected output for actual output");
-            assert (data_out.tdata == expected_outputs[0]) begin
-                passed++;
-            end else begin
-                $error("Output incorrect for image %0d: actual = %0d vs expected = %0d", output_count, data_out.tdata, expected_outputs[0]);
-                failed++;
-            end
-            void'(expected_outputs.pop_front());
-            latency.end_event(output_count);
-            if (output_count == NUM_TEST_IMAGES - 1) throughput.sample_end();
-            output_count++;
+        // Simulate gaps on data_in bus.
+        while (!chance(
+            DATA_IN_VALID_PROBABILITY
+        )) begin
+          data_in.tvalid <= 1'b0;
+          @(posedge clk iff data_in.tready);
         end
+        data_in.tvalid <= 1'b1;
+        data_in.tlast  <= (j + INPUTS_PER_CYCLE >= current_img.size());
+        @(posedge clk iff data_in.tready);
+
+        // Start the throughput timer after the first beat of the first image has been accepted.                
+        if (i == 0 && j == 0) throughput.start_test();
+
+        // Start the latency timer after the first beat of each image has been accepted.                
+        if (j == 0) latency.start_event(i);
+      end
+
+      data_in.tvalid <= 1'b0;
+      data_in.tlast  <= 1'b0;
+      data_in.tkeep  <= '0;
+      @(posedge clk);
     end
 
-    initial begin : l_timeout
-        #TIMEOUT;
-        $fatal(1, $sformatf("Simulation failed due to timeout of %0t.", TIMEOUT));
+    $display("[%0t] All images loaded, waiting for outputs.", $realtime);
+    wait (expected_outputs.size() == 0);
+    repeat (5) @(posedge clk);
+
+    disable generate_clock;
+    disable l_timeout;
+    if (passed == num_tests)
+      $display("[%0t] SUCCESS: all %0d tests completed successfully.", $realtime, num_tests);
+    else $error("FAILED: %0d out of %0d tests failed.", failed, num_tests);
+
+    $display("\nStats:");
+    $display("Avg latency (cycles) per image: %0.1f cycles", latency.get_avg_cycles());
+    $display("Avg latency (time) per image: %0.1f ns", latency.get_avg_time());
+    $display("Avg throughput (outputs/sec): %0.1f", throughput.get_outputs_per_sec(NUM_TEST_IMAGES
+             ));
+    $display("Avg throughput (cycles/output): %0.1f", throughput.get_avg_cycles_per_output(
+             NUM_TEST_IMAGES));
+  end
+
+  initial begin : l_toggle_ready
+    data_out.tready <= 1'b1;
+    @(posedge clk iff !rst);
+    if (TOGGLE_DATA_OUT_READY) begin
+      forever begin
+        data_out.tready <= $urandom();
+        @(posedge clk);
+      end
+    end else data_out.tready <= 1'b1;
+  end
+
+  initial begin : l_output_monitor
+    automatic int output_count = 0;
+    forever begin
+      @(posedge clk iff data_out.tvalid && data_out.tready);
+      assert (expected_outputs.size() > 0)
+      else $fatal(1, "No expected output for actual output");
+      assert (data_out.tdata == expected_outputs[0]) begin
+        passed++;
+      end else begin
+        $error("Output incorrect for image %0d: actual = %0d vs expected = %0d", output_count,
+               data_out.tdata, expected_outputs[0]);
+        failed++;
+      end
+      void'(expected_outputs.pop_front());
+      latency.end_event(output_count);
+      if (output_count == NUM_TEST_IMAGES - 1) throughput.sample_end();
+      output_count++;
     end
+  end
+
+  initial begin : l_timeout
+    #TIMEOUT;
+    $fatal(1, $sformatf("Simulation failed due to timeout of %0t.", TIMEOUT));
+  end
 
 endmodule
