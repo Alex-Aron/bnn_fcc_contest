@@ -126,7 +126,7 @@ Just ideas, I am going to work on this I just want to push after making the two 
   always_ff @(posedge clk or posedge rst) begin : process_weights_register_the_weights
     if (rst) begin
       weights_to_send <= '0;
-    end else if (state == PROCESS_WEIGHTS && config_valid) begin
+    end else if (state == PROCESS_WEIGHTS && config_valid && weights_to_send == 0) begin
       // register inputs and set counter
       for (int i = 0; i < BUS_WIDTH / 8; i++) begin
         weights[i] <= config_data_in[i*8+:8];
@@ -159,7 +159,7 @@ Just ideas, I am going to work on this I just want to push after making the two 
     // only apply back pressure when in PROCESS_WEIGHTS state and sending
     // weights
     if (state == PROCESS_WEIGHTS) begin
-      if (config_valid || weights_to_send != '0) begin
+      if (config_valid && weights_to_send != '0) begin
         config_ready = 1'b0;
       end
     end
