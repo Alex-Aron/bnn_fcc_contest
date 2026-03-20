@@ -45,7 +45,7 @@ module layer_tb #(
   logic threshold_valid;
 
   logic [PN-1:0] ys;
-  logic [THRESHOLD_WIDTH-1:0] popcounts[PN-1:0];
+  logic [32-1:0] popcounts[PN-1:0];
   logic layer_valid_out;
   // -------------- END Testbench signals -------------
 

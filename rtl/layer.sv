@@ -34,7 +34,7 @@ module layer #(
     input logic threshold_valid,
 
     output logic [PN-1:0] ys,
-    output logic [THRESHOLD_WIDTH-1:0] popcounts[PN-1:0],
+    output logic [32-1:0] popcounts[PN-1:0],
     output logic layer_valid_out
 );
   /* --------------- ALL RAM NP SIGNALS      ---------------------*/
@@ -72,8 +72,14 @@ module layer #(
 
   // assign outputs
   assign ys = y;
-  assign popcounts = popcount;
+  // assign popcounts = popcount; this will not zero extend
   assign layer_valid_out = valid_out[0];  // all neurons in a layer output at the same time
+
+  always_comb begin
+    for (int i = 0; i < PN; i++) begin
+      popcounts[i] = popcount[i];  // this will extend with 0's for me
+    end
+  end
 
   // create PN ram_neuron_processors
   for (genvar i = 0; i < PN; i++) begin : l_ram_neuron_processors
