@@ -7,7 +7,7 @@ module layer #(
     parameter int PW = 8,  // weights inputs that can be processed in one pass
     parameter int PN = 5,
     parameter int NEURONS_IN_THIS_LAYER = 10,
-    parameter int FIFO_SAFTEY_FACTOR = 5,
+    parameter int FIFO_SAFTEY_FACTOR = 2,
 
     localparam int THRESHOLD_WIDTH = $clog2(MAX_NEURON_INPUTS + 1),
 
@@ -20,6 +20,9 @@ module layer #(
 ) (
     input logic clk,
     input logic rst,
+
+    input  logic layer_en,
+    output logic layer_ready,
 
     input logic [PW-1:0] layer_inputs,
     input logic input_valid,
@@ -121,6 +124,9 @@ module layer #(
   assign fifo_wr_data = layer_inputs;
   assign fifo_wr_en   = input_valid;
 
+  // if the fifo is full, we are not ready
+  assign layer_ready  = !fifo_full;
+
   // input buffer that holds MAX_NEURON_INPUTS/PW sets of inputs until they
   // are used by every neuron
   logic [$clog2(MAX_NEURON_INPUTS/PW)-1:0] valid_in_count;
@@ -130,7 +136,7 @@ module layer #(
 
   logic fifo_rd_valid;
 
-  assign fifo_rd_en = !input_buffer_full && !fifo_empty && valid_in_count < MAX_NEURON_INPUTS / PW - 1;
+  assign fifo_rd_en = layer_en && !input_buffer_full && !fifo_empty && !(fifo_rd_valid && valid_in_count <= MAX_NEURON_INPUTS / PW - 1);
   always_ff @(posedge clk or posedge rst) begin
     // the default is that all the neurons are disabled
     for (int i = 0; i < PN; i++) begin
@@ -151,70 +157,73 @@ module layer #(
         fifo_rd_valid <= 1'b1;
       end
 
-      // if the input buffer isn't full, this is a new input
-      if (!input_buffer_full && fifo_rd_valid) begin
-        // 0. increment valid_in_count
-        valid_in_count <= valid_in_count + 1;
+      if (layer_en || fifo_rd_valid) begin
+        // if the input buffer isn't full, this is a new input
+        if (!input_buffer_full && fifo_rd_valid) begin
+          // 0. increment valid_in_count
+          valid_in_count <= valid_in_count + 1;
 
-        // 1. store to input buffer
-        for (int i = 0; i < MAX_NEURON_INPUTS / PW - 1; i++) begin
-          input_buffer[i] <= input_buffer[i+1];
-        end
-        input_buffer[MAX_NEURON_INPUTS/PW-1] <= fifo_rd_data;
-
-        // 2. send to neurons in the layer
-        for (int i = 0; i < PN; i++) begin
-          inputs[i]   <= fifo_rd_data;
-          valid_in[i] <= 1'b1;
-        end
-
-        // 3. check if input buffer full
-        // (more like check if the buffer will be full after this input)
-        // (more like check if the buffer is one away from being full)
-        if (valid_in_count == MAX_NEURON_INPUTS / PW - 1) begin
-          if (NEURONS_MAPPED_TO_ME != 1) begin
-            input_buffer_full <= 1'b1;
+          // 1. store to input buffer
+          for (int i = 0; i < MAX_NEURON_INPUTS / PW - 1; i++) begin
+            input_buffer[i] <= input_buffer[i+1];
           end
-          valid_in_count <= '0;  // we can safely reset this here
+          input_buffer[MAX_NEURON_INPUTS/PW-1] <= fifo_rd_data;
+
+          // 2. send to neurons in the layer
           for (int i = 0; i < PN; i++) begin
-            last[i] <= 1'b1;
+            inputs[i]   <= fifo_rd_data;
+            valid_in[i] <= 1'b1;
+          end
+
+          // 3. check if input buffer full
+          // (more like check if the buffer will be full after this input)
+          // (more like check if the buffer is one away from being full)
+          if (valid_in_count == MAX_NEURON_INPUTS / PW - 1) begin
+            if (NEURONS_MAPPED_TO_ME != 1) begin
+              input_buffer_full <= 1'b1;
+            end
+            valid_in_count <= '0;  // we can safely reset this here
+            for (int i = 0; i < PN; i++) begin
+              last[i] <= 1'b1;
+              valid_out_count <= valid_out_count + 1;
+            end
+          end
+        end
+
+        // if the input buffer is full...
+        // we have all the inputs already! spam them each cycle until they are
+        // completely consumed by every neuron in this layer
+        if (input_buffer_full) begin
+          // we have already sent the input in MAX_NEURON_INPUTS/PW times, 
+          // we have to send it in a total of MAX_NEURON_INPUTS/PW * NEURONS_MAPPED_TO_ME times
+          // in other words, we are busy consuming this input for another
+          // MAX_NEURON_INPUTS/PW * NEURONS_MAPPED_TO_ME - MAX_NEURON_INPUTS/PW
+          // or
+          // MAX_NEURON_INPUTS/PW * (NEURONS_MAPPED_TO_ME - 1) <------ assume NEURONS_MAPPED_TO_ME is > 1
+          // cycles
+
+          valid_in_count <= valid_in_count + 1;
+          for (int i = 0; i < PN; i++) begin
+            inputs[i]   <= input_buffer[valid_in_count];
+            valid_in[i] <= 1'b1;
+          end
+
+          if (valid_in_count == MAX_NEURON_INPUTS / PW - 1) begin
+            for (int i = 0; i < PN; i++) begin
+              last[i] <= 1'b1;
+            end
+
             valid_out_count <= valid_out_count + 1;
+            valid_in_count  <= '0;
+
+            if (valid_out_count + 1 == NEURONS_MAPPED_TO_ME) begin
+              valid_out_count   <= '0;
+              input_buffer_full <= '0;
+            end
           end
         end
       end
 
-      // if the input buffer is full...
-      // we have all the inputs already! spam them each cycle until they are
-      // completely consumed by every neuron in this layer
-      if (input_buffer_full) begin
-        // we have already sent the input in MAX_NEURON_INPUTS/PW times, 
-        // we have to send it in a total of MAX_NEURON_INPUTS/PW * NEURONS_MAPPED_TO_ME times
-        // in other words, we are busy consuming this input for another
-        // MAX_NEURON_INPUTS/PW * NEURONS_MAPPED_TO_ME - MAX_NEURON_INPUTS/PW
-        // or
-        // MAX_NEURON_INPUTS/PW * (NEURONS_MAPPED_TO_ME - 1) <------ assume NEURONS_MAPPED_TO_ME is > 1
-        // cycles
-
-        valid_in_count <= valid_in_count + 1;
-        for (int i = 0; i < PN; i++) begin
-          inputs[i]   <= input_buffer[valid_in_count];
-          valid_in[i] <= 1'b1;
-        end
-
-        if (valid_in_count == MAX_NEURON_INPUTS / PW - 1) begin
-          for (int i = 0; i < PN; i++) begin
-            last[i] <= 1'b1;
-          end
-
-          valid_out_count <= valid_out_count + 1;
-          valid_in_count  <= '0;
-
-          if (valid_out_count + 1 == NEURONS_MAPPED_TO_ME) begin
-            valid_out_count   <= '0;
-            input_buffer_full <= '0;
-          end
-        end
-      end
     end
   end
 
