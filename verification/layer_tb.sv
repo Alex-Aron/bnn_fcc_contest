@@ -32,6 +32,9 @@ module layer_tb #(
   logic clk;
   logic rst;
 
+  logic layer_en;
+  logic layer_ready;
+
   logic [PW-1:0] layer_inputs;
   logic input_valid;
 
@@ -124,6 +127,7 @@ module layer_tb #(
     weight_valid <= 1'b0;
     threshold_valid <= 1'b0;
     input_valid <= 1'b0;
+    layer_en <= 1'b1;  // won't do any harm when reset
     repeat (5) @(posedge clk);
     @(negedge clk);
     rst <= 1'b0;
@@ -203,12 +207,26 @@ module layer_tb #(
 
       // send the entire input list once
       for (int i = 0; i < SETS_OF_INPUTS * MAX_NEURON_INPUTS / PW; i++) begin
-        input_valid  <= 1'b1;
+        // layer not ready? just wait
+        while (!layer_ready) begin
+          layer_en <= 1'b1;
+          input_valid <= 1'b0;
+          @(posedge clk);
+        end
+
+        layer_en <= 1'b1;
+        input_valid <= 1'b1;
         layer_inputs <= item.layer_inputs[i];
         @(posedge clk);
+
+        // disable for a random number of cycles
+        layer_en <= 1'b0;
+        input_valid <= 1'b0;
+        repeat ($urandom_range(0, 1)) @(posedge clk);
       end
 
       input_valid <= 1'b0;
+      layer_en <= 1'b1;
 
       // wait for NEURONS_IN_THIS_LAYER/PN valid_outs (RE DO ME)
       //last <= 1'b0;
@@ -216,7 +234,9 @@ module layer_tb #(
       valid_out_counter <= '0;
 
       // Wait a random amount of time in between tests.
-      repeat ($urandom_range(MIN_CYCLES_BETWEEN_TESTS - 1, MAX_CYCLES_BETWEEN_TESTS - 1));
+      repeat ($urandom_range(
+          MIN_CYCLES_BETWEEN_TESTS - 1, MAX_CYCLES_BETWEEN_TESTS - 1
+      ))
       @(posedge clk);
     end
   end
