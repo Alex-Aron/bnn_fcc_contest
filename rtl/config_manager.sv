@@ -93,6 +93,8 @@ Just ideas, I am going to work on this I just want to push after making the two 
 
   // this is defined here because I'm lazy but is (mainly )used in this block: `process_weights_register_the_weights`
   logic [$clog2(BUS_WIDTH/8):0] weights_to_send;
+  logic [31:0] weights_sent;  // TODO size me better
+  logic [31:0] threshold_bytes_sent;  // TODO size me better
 
   always_comb begin : next_state_logic
     next_state = state;
@@ -101,11 +103,23 @@ Just ideas, I am going to work on this I just want to push after making the two 
       HEADER_PARSE2: begin
         if (config_valid) next_state = header.msg_type[0] ? PROCESS_THRESHOLDS : PROCESS_WEIGHTS;
       end
-      PROCESS_WEIGHTS: next_state = config_last ? FINISH_LAYER : PROCESS_WEIGHTS;
-      PROCESS_THRESHOLDS: next_state = config_last ? HEADER_PARSE1 : PROCESS_THRESHOLDS;
+      PROCESS_WEIGHTS:
+      next_state = weights_sent == header.payload_bytes ? FINISH_LAYER : PROCESS_WEIGHTS;
+      PROCESS_THRESHOLDS:
+      next_state = header.payload_bytes == 0 ? HEADER_PARSE1 : PROCESS_THRESHOLDS;
       FINISH_LAYER: next_state = weights_to_send == '0 ? HEADER_PARSE1 : PROCESS_WEIGHTS;
     endcase
 
+  end
+
+  always_ff @(posedge clk or posedge rst) begin : count_thresholds_sent
+    if (rst) begin
+      threshold_bytes_sent <= '0;
+    end else begin
+      if (threshold_wr_en != '0) begin
+        threshold_bytes_sent <= threshold_bytes_sent + 4;  // each thresh is 4 bytes
+      end
+    end
   end
 
   // for when we are in PROCESS_THRESHOLDS
@@ -126,6 +140,7 @@ Just ideas, I am going to work on this I just want to push after making the two 
   always_ff @(posedge clk or posedge rst) begin : process_weights_register_the_weights
     if (rst) begin
       weights_to_send <= '0;
+      weights_sent <= '0;
     end else if (state == PROCESS_WEIGHTS && config_valid && weights_to_send == 0) begin
       // register inputs and set counter
       for (int i = 0; i < BUS_WIDTH / 8; i++) begin
@@ -135,6 +150,7 @@ Just ideas, I am going to work on this I just want to push after making the two 
       weights_to_send <= (1 << $clog2(BUS_WIDTH / 8));
     end else if (weights_to_send != 0) begin
       weights_to_send <= weights_to_send - 1;
+      weights_sent <= weights_sent + 1;
       for (int i = 0; i < BUS_WIDTH / 8 - 1; i++) begin
         weights[i] <= weights[i+1];
       end
