@@ -79,7 +79,7 @@ module bnn_fcc #(
   logic                            bnn_ready;
   logic [     PARALLEL_INPUTS-1:0] bnn_data_in;
   logic                            bnn_data_in_valid;
-  logic [THRESHOLD_DATA_WIDTH-1:0] bnn_count_out     [PARALLEL_NEURONS[LAYERS-1]];
+  logic [THRESHOLD_DATA_WIDTH-1:0] bnn_count_out     [PARALLEL_NEURONS[LAYERS-1]-1:0];
   logic                            bnn_count_valid;
 
   initial begin
