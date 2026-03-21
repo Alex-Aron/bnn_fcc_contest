@@ -63,10 +63,23 @@ module bnn #(
     end
   end
 
+  always_ff @(posedge clk or posedge rst) begin
+    if (rst) begin
+      data_out_valid <= 1'b0;
+    end
+    if (layer_valid_out[LAYERS-1]) begin
+      data_out_valid <= 1'b1;
+      popcounts_out  <= popcounts[LAYERS-1];
+    end
+    if (en) begin
+      data_out_valid <= 1'b0;
+    end
+  end
+
   always_comb begin : assign_module_outputs
-    data_out_valid = layer_valid_out[LAYERS-1];
+    //data_out_valid = layer_valid_out[LAYERS-1];
     ys_out = ys[LAYERS-1];
-    popcounts_out = popcounts[LAYERS-1];
+    //popcounts_out = popcounts[LAYERS-1];
   end
 
   for (genvar i = 0; i < LAYERS; i++) begin : l_generate_layers
