@@ -88,6 +88,7 @@ Just ideas, I am going to work on this I just want to push after making the two 
 
   logic [31:0] bytes_read;
   logic [BUS_WIDTH/8-1:0] weights_last;
+  logic [BUS_WIDTH/32-1:0] thresholds_last;
 
   always_comb begin : next_state_logic
     next_state = state;
@@ -98,6 +99,8 @@ Just ideas, I am going to work on this I just want to push after making the two 
       end
       PROCESS_WEIGHTS:
       next_state = ( (header.payload_bytes == bytes_read) && (weights_last[0] == 1'b1) ) ? HEADER_PARSE1 : PROCESS_WEIGHTS;
+      PROCESS_THRESHOLDS:
+      next_state = ( (header.payload_bytes == bytes_read) && (thresholds_last[0] == 1'b1) ) ? HEADER_PARSE1 : PROCESS_THRESHOLDS;
     endcase
   end
 
@@ -118,7 +121,7 @@ Just ideas, I am going to work on this I just want to push after making the two 
   always_ff @(posedge clk or posedge rst) begin : PROCESS_WEIGHTS_PAYLOAD
     if (rst) begin
       weights_last <= '0;
-      for (int i = 0; i < BUS_WIDTH / 8 - 1; i++) begin
+      for (int i = 0; i < BUS_WIDTH / 8; i++) begin
         weights[i] <= '0;
       end
 
@@ -129,6 +132,7 @@ Just ideas, I am going to work on this I just want to push after making the two 
           weights[i] <= config_data_in[i*8+:8];
         end
         weights_last[BUS_WIDTH/8-1] <= 1'b1;
+        weights_last[0] <= 1'b0;
       end else if ($countones(weights_last) != '0) begin
         // shfit the registers
         for (int i = 0; i < BUS_WIDTH / 8 - 1; i++) begin
@@ -149,11 +153,49 @@ Just ideas, I am going to work on this I just want to push after making the two 
       weight_wr_en[header.layer.id] = 1'b1;
     end
   end
+  ///////////////////////// TODO add thresh
+  logic [32-1:0] thresholds[BUS_WIDTH/32-1:0];
+  assign threshold_wr_data = thresholds[0];
+  always_ff @(posedge clk or posedge rst) begin : PROCESS_THRESHOLDS_PAYLOAD
+    if (rst) begin
+      thresholds_last <= '0;
+      for (int i = 0; i < BUS_WIDTH / 32; i++) begin
+        thresholds[i] <= '0;
+      end
+
+    end else if (state == PROCESS_THRESHOLDS) begin
+      // do we need to read more into shift reg?
+      if (config_ready && config_valid) begin
+        for (int i = 0; i < BUS_WIDTH / 32; i++) begin
+          thresholds[i] <= config_data_in[i*32+:32];
+        end
+        thresholds_last[BUS_WIDTH/32-1] <= 1'b1;
+        thresholds_last[0] <= 1'b0;
+      end else if ($countones(thresholds_last) != '0) begin
+        // shfit the registers
+        for (int i = 0; i < BUS_WIDTH / 32 - 1; i++) begin
+          thresholds[i] <= thresholds[i+1];
+          thresholds_last[i] <= thresholds_last[i+1];
+        end
+
+        // shift in a 0 for the weights_last
+        thresholds_last[BUS_WIDTH/32-1] <= 1'b0;
+      end
+
+    end
+  end
+
+  always_comb begin : set_threshold_wr_en
+    threshold_wr_en = '0;
+    if ($countones(thresholds_last) != '0) begin
+      threshold_wr_en[header.layer.id] = 1'b1;
+    end
+  end
+  //////////////////////
 
   always_comb begin : set_config_ready
     config_ready = 1'b1;
 
-    // TODO add weight
     if (state == PROCESS_WEIGHTS) begin
       config_ready = 1'b0;
 
@@ -164,9 +206,28 @@ Just ideas, I am going to work on this I just want to push after making the two 
       if (weights_last[0] == 1'b1 && header.payload_bytes != bytes_read) begin
         config_ready = 1'b1;
       end
+
+      if ($countones(weights_last) == '0 && header.payload_bytes != bytes_read) begin
+        config_ready = 1'b1;
+      end
     end
 
-    // TODO add thresh
+    ///////////////////
+    if (state == PROCESS_THRESHOLDS) begin
+      config_ready = 1'b0;
+
+      if (bytes_read == '0) begin
+        config_ready = 1'b1;
+      end
+
+      if (thresholds_last[0] == 1'b1 && header.payload_bytes != bytes_read) begin
+        config_ready = 1'b1;
+      end
+
+      if ($countones(thresholds_last) == '0 && header.payload_bytes != bytes_read) begin
+        config_ready = 1'b1;
+      end
+    end
   end
 
 endmodule : config_manager
