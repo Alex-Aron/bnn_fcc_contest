@@ -86,117 +86,8 @@ Just ideas, I am going to work on this I just want to push after making the two 
     end
   end
 
-  logic [31:0] weight_bytes_sent;  // todo size me
-  logic [31:0] weights_in_shift_register;  // todo size me
-  logic [8-1:0] weights[BUS_WIDTH/8-1:0];
-  always_ff @(posedge clk or posedge rst) begin : PROCESS_WEIGHTSS
-    if (rst) begin
-      weight_bytes_sent <= '0;
-      weights_in_shift_register <= '0;
-      for (int i = 0; i < BUS_WIDTH / 8; i++) begin
-        weights[i] <= '0;
-      end
-    end else begin
-      if (state == PROCESS_WEIGHTS) begin
-        // if out of weights, read more
-        if (weights_in_shift_register == '0 && config_valid) begin
-          weights_in_shift_register <= 8;
-          for (int i = 0; i < BUS_WIDTH / 8; i++) begin
-            weights[i] <= config_data_in[i*8+:8];
-          end
-        end
-
-        // if we have weights, send them
-        if (weights_in_shift_register != 0) begin
-          weights_in_shift_register <= weights_in_shift_register - 1;
-          weight_bytes_sent <= weight_bytes_sent + 1;
-          for (int i = 0; i < (BUS_WIDTH / 8) - 1; i++) begin
-            weights[i] <= weights[i+1];
-          end
-        end
-
-        // if we are done, rst stuff plz :)
-        if (weight_bytes_sent == header.payload_bytes) begin
-          weight_bytes_sent <= '0;
-          weights_in_shift_register <= '0;
-        end
-      end
-    end
-  end
-
-  always_comb begin : assign_weight_outputs
-    weight_wr_data = weights[0];
-    weight_wr_en   = '0;
-
-    if (state == PROCESS_WEIGHTS && weights_in_shift_register != 0) begin
-      weight_wr_en[header.layer.id] = 1'b1;
-    end
-  end
-
-  /////////////////////
-  logic [31:0] thresh_bytes_sent;  // todo size me
-  logic [31:0] thresh_in_shift_register;  // todo size me
-  logic [31:0] threshholds[BUS_WIDTH/32-1:0];
-  always_ff @(posedge clk or posedge rst) begin : PROCESS_THRESHOLDSS
-    if (rst) begin
-      thresh_bytes_sent <= '0;
-      thresh_in_shift_register <= '0;
-      for (int i = 0; i < BUS_WIDTH / 32; i++) begin
-        threshholds[i] <= '0;
-      end
-    end else begin
-      if (state == PROCESS_THRESHOLDS) begin
-        // if out of threshholds, read more
-        if (thresh_in_shift_register == '0 && config_valid) begin
-          thresh_in_shift_register <= 2;
-          for (int i = 0; i < BUS_WIDTH / 32; i++) begin
-            threshholds[i] <= config_data_in[i*32+:32];
-          end
-        end
-
-        // if we have threshholds, send them
-        if (thresh_in_shift_register != 0) begin
-          thresh_in_shift_register <= thresh_in_shift_register - 1;
-          thresh_bytes_sent <= thresh_bytes_sent + 4;
-          for (int i = 0; i < (BUS_WIDTH / 32) - 1; i++) begin
-            threshholds[i] <= threshholds[i+1];
-          end
-        end
-
-        // if we are done, rst stuff plz :)
-        if (thresh_bytes_sent == header.payload_bytes) begin
-          thresh_bytes_sent <= '0;
-          thresh_in_shift_register <= '0;
-        end
-      end
-    end
-  end
-
-  always_comb begin : assign_threshold_outputs
-    threshold_wr_data = threshholds[0];
-    threshold_wr_en   = '0;
-
-    if (state == PROCESS_THRESHOLDS && thresh_in_shift_register != 0) begin
-      threshold_wr_en[header.layer.id] = 1'b1;
-    end
-  end
-  /////////////////////
-
-  always_comb begin : assign_config_ready
-    config_ready = 1'b1;
-
-    if (state == PROCESS_WEIGHTS) begin
-      if (weights_in_shift_register != '0) begin
-        config_ready = 1'b0;
-      end
-    end
-
-    if (state == PROCESS_THRESHOLDS) begin
-      if (thresh_in_shift_register != '0) begin
-        config_ready = 1'b0;
-      end
-    end
-  end
+  logic [31:0] bytes_read;
+  logic [BUS_WIDTH/8-1:0] weights_last;
 
   always_comb begin : next_state_logic
     next_state = state;
@@ -206,9 +97,76 @@ Just ideas, I am going to work on this I just want to push after making the two 
         if (config_valid) next_state = header.msg_type[0] ? PROCESS_THRESHOLDS : PROCESS_WEIGHTS;
       end
       PROCESS_WEIGHTS:
-      next_state = weight_bytes_sent == header.payload_bytes ? HEADER_PARSE1 : PROCESS_WEIGHTS;
-      PROCESS_THRESHOLDS:
-      next_state = thresh_bytes_sent == header.payload_bytes ? HEADER_PARSE1 : PROCESS_WEIGHTS;
+      next_state = ( (header.payload_bytes == bytes_read) && (weights_last[0] == 1'b1) ) ? HEADER_PARSE1 : PROCESS_WEIGHTS;
     endcase
   end
+
+  always_ff @(posedge clk or posedge rst) begin : track_bytes_read
+    if (rst) begin
+      bytes_read <= '0;
+    end else begin
+      if (state == HEADER_PARSE2) begin
+        bytes_read <= '0;
+      end else if (config_valid && config_ready) begin
+        bytes_read <= bytes_read + BUS_WIDTH / 8;
+      end
+    end
+  end
+
+  logic [8-1:0] weights[BUS_WIDTH/8-1:0];
+  assign weight_wr_data = weights[0];
+  always_ff @(posedge clk or posedge rst) begin : PROCESS_WEIGHTS_PAYLOAD
+    if (rst) begin
+      weights_last <= '0;
+      for (int i = 0; i < BUS_WIDTH / 8 - 1; i++) begin
+        weights[i] <= '0;
+      end
+
+    end else if (state == PROCESS_WEIGHTS) begin
+      // do we need to read more into shift reg?
+      if (config_ready && config_valid) begin
+        for (int i = 0; i < BUS_WIDTH / 8; i++) begin
+          weights[i] <= config_data_in[i*8+:8];
+        end
+        weights_last[BUS_WIDTH/8-1] <= 1'b1;
+      end else if ($countones(weights_last) != '0) begin
+        // shfit the registers
+        for (int i = 0; i < BUS_WIDTH / 8 - 1; i++) begin
+          weights[i] <= weights[i+1];
+          weights_last[i] <= weights_last[i+1];
+        end
+
+        // shift in a 0 for the weights_last
+        weights_last[BUS_WIDTH/8-1] <= 1'b0;
+      end
+
+    end
+  end
+
+  always_comb begin : set_weight_wr_en
+    weight_wr_en = '0;
+    if ($countones(weights_last) != '0) begin
+      weight_wr_en[header.layer.id] = 1'b1;
+    end
+  end
+
+  always_comb begin : set_config_ready
+    config_ready = 1'b1;
+
+    // TODO add weight
+    if (state == PROCESS_WEIGHTS) begin
+      config_ready = 1'b0;
+
+      if (bytes_read == '0) begin
+        config_ready = 1'b1;
+      end
+
+      if (weights_last[0] == 1'b1 && header.payload_bytes != bytes_read) begin
+        config_ready = 1'b1;
+      end
+    end
+
+    // TODO add thresh
+  end
+
 endmodule : config_manager
