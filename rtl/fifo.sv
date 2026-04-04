@@ -30,7 +30,7 @@ module fifo #(
 
   always_ff @(posedge clk) begin
     if (valid_wr) ram[wr_addr_r[ADDR_WIDTH-2:0]] <= wr_data;
-    rd_data <= ram[rd_addr_r[ADDR_WIDTH-2:0]];
+    if (rd_en) rd_data <= ram[rd_addr_r[ADDR_WIDTH-2:0]];
   end
 
   always_ff @(posedge clk or posedge rst) begin

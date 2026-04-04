@@ -142,17 +142,17 @@ module layer #(
 
   logic fifo_rd_valid;
 
-  assign fifo_rd_en = layer_en && !input_buffer_full && !fifo_empty && !(fifo_rd_valid && valid_in_count <= MAX_NEURON_INPUTS / PW - 1);
+  assign fifo_rd_en = layer_en && !fifo_rd_valid && !input_buffer_full && !fifo_empty && !(fifo_rd_valid && valid_in_count <= MAX_NEURON_INPUTS / PW - 1);
   always_ff @(posedge clk or posedge rst) begin
     // the default is that all the neurons are disabled
     for (int i = 0; i < PN; i++) begin
       valid_in[i] <= 1'b0;
       last[i] <= 1'b0;
     end
-    fifo_rd_valid <= 1'b0;
 
     if (rst) begin
       input_buffer_full <= 1'b0;
+      fifo_rd_valid <= 1'b0;
       valid_in_count <= '0;
       valid_out_count <= '0;
       for (int i = 0; i < MAX_NEURON_INPUTS / PW; i++) begin
@@ -163,13 +163,14 @@ module layer #(
         fifo_rd_valid <= 1'b1;
       end
 
-      if (layer_en || fifo_rd_valid) begin
+      if (layer_en) begin
         // if the input buffer isn't full, this is a new input
         if (!input_buffer_full && fifo_rd_valid) begin
           // 0. increment valid_in_count
           valid_in_count <= valid_in_count + 1;
 
           // 1. store to input buffer
+          fifo_rd_valid  <= 1'b0;
           for (int i = 0; i < MAX_NEURON_INPUTS / PW - 1; i++) begin
             input_buffer[i] <= input_buffer[i+1];
           end

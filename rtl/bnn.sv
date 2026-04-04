@@ -71,7 +71,7 @@ module bnn #(
       data_out_valid <= 1'b1;
       popcounts_out  <= popcounts[LAYERS-1];
     end
-    if (en) begin
+    if (en && data_out_valid) begin
       data_out_valid <= 1'b0;
     end
   end
@@ -92,7 +92,7 @@ module bnn #(
     ) u_layer (
         .clk(clk),
         .rst(rst),
-        .layer_en(en),
+        .layer_en(en && !data_out_valid),
         .layer_ready(layer_ready[i]),
         .layer_inputs(layer_inputs[i]),
         .input_valid(input_valid[i]),
